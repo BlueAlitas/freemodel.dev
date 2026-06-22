@@ -279,6 +279,122 @@
   .model .spark .b.bad  { background: var(--bad); }
   .model .spark .b.down { background: var(--down); }
 
+  /* ─── Stats card ──────────────────────────────────────────── */
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+  @media (max-width: 640px) { .stats { grid-template-columns: repeat(2, 1fr); } }
+  .stat {
+    background: var(--bg-card);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 14px 16px;
+    display: flex; flex-direction: column; gap: 4px;
+  }
+  .stat .label {
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-size: 10px;
+    color: var(--ink-muted);
+  }
+  .stat .val {
+    font-size: 24px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    font-variant-numeric: tabular-nums;
+    color: var(--ink);
+  }
+  .stat .sub { font-size: 12px; color: var(--ink-muted); }
+  .stat .sub b { color: var(--ink-soft); font-weight: 500; }
+  .stat.active .val { color: var(--accent-ink); }
+  .stat.active .val::before {
+    content: "";
+    display: inline-block;
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--accent-ink);
+    margin-right: 8px;
+    vertical-align: middle;
+    box-shadow: 0 0 0 3px rgba(52,211,153,0.18);
+    animation: blink 2s ease-in-out infinite;
+  }
+  @keyframes blink {
+    0%,100% { opacity: 1; }
+    50%     { opacity: 0.4; }
+  }
+
+  .daily-card {
+    background: var(--bg-card);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 16px 18px;
+    margin-bottom: 16px;
+  }
+  .daily-head {
+    display: flex; align-items: baseline; justify-content: space-between;
+    margin-bottom: 10px;
+  }
+  .daily-head .h {
+    font-size: 13px; color: var(--ink-soft); font-weight: 500;
+  }
+  .daily-head .h b { color: var(--accent-ink); font-weight: 600; }
+  .daily-head .legend { color: var(--ink-muted); font-size: 12px; }
+
+  .daily-chart {
+    display: flex; align-items: flex-end; gap: 3px;
+    height: 72px;
+  }
+  .daily-chart .d {
+    flex: 1 1 0;
+    min-width: 6px;
+    background: var(--accent-ink);
+    border-radius: 3px 3px 0 0;
+    opacity: 0.55;
+    position: relative;
+    transition: opacity .2s ease, background .2s ease;
+  }
+  .daily-chart .d.today { opacity: 1; background: var(--accent-ink); }
+  .daily-chart .d:hover { opacity: 1; }
+  .daily-chart .d:hover::after {
+    content: attr(data-tip);
+    position: absolute;
+    bottom: calc(100% + 6px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--bg);
+    color: var(--ink);
+    border: 1px solid var(--line);
+    padding: 6px 8px;
+    border-radius: 6px;
+    font-size: 11px;
+    white-space: nowrap;
+    pointer-events: none;
+    z-index: 5;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .countries {
+    display: flex; flex-wrap: wrap; gap: 8px;
+    margin-top: 12px;
+  }
+  .country {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 10px;
+    background: var(--bg-warm);
+    border: 1px solid var(--line-soft);
+    border-radius: 999px;
+    font-size: 12px;
+    color: var(--ink-soft);
+  }
+  .country .cc {
+    font-family: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+    color: var(--ink);
+    font-weight: 600;
+  }
+  .country .n { color: var(--ink-muted); font-variant-numeric: tabular-nums; }
+
   /* ─── Footer ──────────────────────────────────────────────── */
   footer.bot {
     margin-top: 40px;
@@ -307,6 +423,38 @@
         <span class="pill"><span class="lbl">cycles</span><span class="val mono" id="cycles">—</span></span>
       </div>
     </header>
+
+    <section class="stats" id="stats" aria-label="Visitor stats">
+      <div class="stat active">
+        <span class="label">Active now</span>
+        <span class="val" id="statActive">—</span>
+        <span class="sub"><b id="statActiveWin">5 min</b> window</span>
+      </div>
+      <div class="stat">
+        <span class="label">Visits today</span>
+        <span class="val" id="statToday">—</span>
+        <span class="sub"><b id="statTodayUnique">—</b> unique</span>
+      </div>
+      <div class="stat">
+        <span class="label">Total visits (30d)</span>
+        <span class="val" id="stat30d">—</span>
+        <span class="sub"><b id="stat30dUnique">—</b> unique</span>
+      </div>
+      <div class="stat">
+        <span class="label">Daily avg (30d)</span>
+        <span class="val" id="statAvg">—</span>
+        <span class="sub">visits / day</span>
+      </div>
+    </section>
+
+    <div class="daily-card">
+      <div class="daily-head">
+        <div class="h">Visitors · <b>last 30 days</b></div>
+        <div class="legend">bar height = visits / day</div>
+      </div>
+      <div class="daily-chart" id="dailyChart" role="img" aria-label="Daily visits chart"></div>
+      <div class="countries" id="countries"></div>
+    </div>
 
     <section class="hero" aria-label="Overall status">
       <div>
@@ -343,6 +491,8 @@
       <div>© freemodel.dev · all checks are best-effort</div>
       <div>
         <a href="https://fm.bluealitas.com/api/status" class="mono">/api/status</a>
+        &nbsp;·&nbsp;
+        <a href="https://fm.bluealitas.com/api/stats" class="mono">/api/stats</a>
         &nbsp;·&nbsp;
         <a href="https://fm.bluealitas.com/api/config" class="mono">/api/config</a>
       </div>
@@ -508,6 +658,53 @@ async function tick() {
   }
 }
 
+async function tickStats() {
+  try {
+    const res = await fetch("/api/stats", { cache: "no-store" });
+    if (!res.ok) return;
+    renderStats(await res.json());
+  } catch {}
+}
+
+function renderStats(s) {
+  $("statActive").textContent     = (s.activeNow ?? 0).toLocaleString();
+  $("statActiveWin").textContent  = (s.activeWindowMin ?? 5) + " min";
+  $("statToday").textContent      = (s.today?.visits ?? 0).toLocaleString();
+  $("statTodayUnique").textContent= (s.today?.unique_visitors ?? 0).toLocaleString();
+
+  const total30 = (s.daily || []).reduce((a, d) => a + d.visits, 0);
+  const uniq30  = new Set(); // can't compute uniques from daily rows; use sum of per-day uniques is wrong, but
+                              // we have topCountries uniques so just leave a derived hint
+  $("stat30d").textContent        = total30.toLocaleString();
+  $("stat30dUnique").textContent  = (s.topCountries || []).reduce((a, c) => a + c.unique_visitors, 0).toLocaleString();
+  $("statAvg").textContent        = Math.round(total30 / 30).toLocaleString();
+
+  // 30-day chart — pad missing days with zeros
+  const days = s.daily || [];
+  const byDay = new Map(days.map(d => [d.day, d]));
+  const series = [];
+  for (let i = 29; i >= 0; i--) {
+    const d = new Date(Date.now() - i * 86400_000);
+    const key = d.toISOString().slice(0, 10);
+    series.push(byDay.get(key) || { day: key, visits: 0, unique_visitors: 0 });
+  }
+  const max = Math.max(1, ...series.map(x => x.visits));
+  const todayKey = new Date().toISOString().slice(0, 10);
+  $("dailyChart").innerHTML = series.map(x => {
+    const h_ = Math.max(2, Math.round((x.visits / max) * 64));
+    const isToday = x.day === todayKey ? "today" : "";
+    return `<div class="d ${isToday}" style="height:${h_}px" data-tip="${x.day} · ${x.visits} visits · ${x.unique_visitors} unique"></div>`;
+  }).join("");
+
+  // Top countries
+  $("countries").innerHTML = (s.topCountries || []).slice(0, 8).map(c => `
+    <span class="country">
+      <span class="cc">${c.country}</span>
+      <span class="n">${c.unique_visitors}</span>
+    </span>
+  `).join("") || `<span class="country"><span class="cc muted">no data yet</span></span>`;
+}
+
 let countdownTimer = null;
 function startCountdownTicker() {
   if (countdownTimer) clearInterval(countdownTimer);
@@ -518,11 +715,12 @@ function startCountdownTicker() {
 }
 
 (async function boot() {
-  await tick();
+  await Promise.all([tick(), tickStats()]);
   startCountdownTicker();
   setInterval(tick, 15000);
+  setInterval(tickStats, 30000);   // stats refresh less aggressively
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible") tick();
+    if (document.visibilityState === "visible") { tick(); tickStats(); }
   });
 })();
 </script>

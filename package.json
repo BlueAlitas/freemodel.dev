@@ -1,9 +1,9 @@
 {
   "name": "freemodel-status",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
-  "description": "Status page + poller for the freemodel.dev LLM gateway.",
+  "description": "Status page + poller + visitor analytics for the freemodel.dev LLM gateway.",
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js"
@@ -12,6 +12,8 @@
     "node": ">=20"
   },
   "dependencies": {
-    "express": "^4.19.2"
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "pg": "^8.13.1"
   }
 }

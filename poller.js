@@ -1,17 +1,16 @@
 /* =================================================================
- * poller.js — freemodel.dev status backend
+ * poller.js — freemodel.dev status backend (Postgres-backed)
  * ----------------------------------------------------------------
  *  - Discovers Anthropic models per target from /v1/models
  *  - Probes each enabled model with a tiny /v1/messages request
  *  - Cadence: 30 min if last probe was 2xx, else 1 min until 2xx
- *  - Persists history to data/status.json
- *  - Exposes a small `state` object + EventEmitter for the server
+ *  - Persists every probe to Postgres; keeps an in-memory cache
+ *    of the most recent probe per (target, model) for scheduling
  * ================================================================= */
 
 import { EventEmitter } from "node:events";
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
-import { dirname } from "node:path";
 import { setTimeout as wait } from "node:timers/promises";
+import { query, tx } from "./db.js";
 
 const env = (k, dflt) => (process.env[k] ?? dflt);
 const envList = (k, dflt) =>
@@ -30,46 +29,29 @@ const CONFIG = {
   intervalHealthy: envMs("INTERVAL_HEALTHY_MS", 30 * 60 * 1000),
   intervalRetry:   envMs("INTERVAL_RETRY_MS",       60 * 1000),
   modelRefresh:    envMs("MODEL_REFRESH_MS",     6 * 60 * 60 * 1000),
-  maxHistory:      envInt("MAX_HISTORY", 240),
-  dataPath:        env("DATA_PATH", "./data/status.json"),
   probeTimeoutMs:  envInt("PROBE_TIMEOUT_MS", 15000),
 };
 
-/* ---------- persistence ---------- */
-function loadState() {
-  try {
-    if (existsSync(CONFIG.dataPath)) {
-      const raw = JSON.parse(readFileSync(CONFIG.dataPath, "utf-8"));
-      if (raw && typeof raw === "object") return raw;
-    }
-  } catch (e) {
-    console.warn("[poller] could not read state:", e.message);
-  }
-  return freshState();
+/* ---------- in-memory cache ---------- */
+// target -> modelId -> { last, history48 (just the most recent 48) }
+const cache = new Map();
+let lastOkByTarget = {};   // target -> ms epoch
+let lastOkOverall = 0;
+let lastCheckAt = 0;
+let cycleCount = 0;
+let lastModelRefresh = {}; // target -> ms epoch
+
+function ensureTarget(t) {
+  if (!cache.has(t)) cache.set(t, new Map());
+  return cache.get(t);
 }
 
-function freshState() {
-  return {
-    targets: Object.fromEntries(CONFIG.targets.map(t => [t, {
-      discoveredAt: 0,
-      lastModelRefresh: 0,
-      models: {},  // id -> { id, enabled, last: {ok,status,latency,ts,error?}, history: [] }
-    }])),
-    lastOkByTarget: {},     // target -> ts of most recent 2xx anywhere
-    lastOkOverall: 0,
-    lastCheckAt: 0,
-    lastCycleAt: 0,
-    cycleCount: 0,
-  };
-}
-
-function saveState(state) {
-  try {
-    mkdirSync(dirname(CONFIG.dataPath), { recursive: true });
-    writeFileSync(CONFIG.dataPath, JSON.stringify(state, null, 2));
-  } catch (e) {
-    console.error("[poller] save failed:", e.message);
-  }
+function pushHistory(target, model, probe) {
+  const m = ensureTarget(target).get(model);
+  if (!m) return;
+  m.last = probe;
+  m.history48.push(probe);
+  if (m.history48.length > 48) m.history48.shift();
 }
 
 /* ---------- discovery ---------- */
@@ -96,39 +78,50 @@ async function discoverModels(target) {
   }
 }
 
-function reconcileModels(targetState, ids) {
+async function reconcileModels(target, ids) {
   const incoming = new Set(ids);
-  const known = new Set(Object.keys(targetState.models));
+  // Existing in DB
+  const { rows } = await query(
+    `SELECT id, enabled, removed_at FROM models WHERE target = $1`,
+    [target]
+  );
+  const known = new Map(rows.map(r => [r.id, r]));
 
-  // Add new models
+  // Add new
   for (const id of incoming) {
     if (!known.has(id)) {
-      targetState.models[id] = {
-        id,
-        enabled: CONFIG.testModels.includes(id),
-        discoveredAt: Date.now(),
-        last: null,
-        history: [],
-      };
+      await query(
+        `INSERT INTO models (target, id, enabled) VALUES ($1, $2, $3)
+         ON CONFLICT (target, id) DO NOTHING`,
+        [target, id, CONFIG.testModels.includes(id)]
+      );
+      ensureTarget(target).set(id, { last: null, history48: [] });
       console.log(`[poller]   + model added: ${id}`);
+    } else if (known.get(id).removed_at) {
+      // Came back from the dead — clear removed_at
+      await query(
+        `UPDATE models SET removed_at = NULL WHERE target = $1 AND id = $2`,
+        [target, id]
+      );
     }
   }
 
-  // Mark removed models (we KEEP history for graphing retirements)
-  for (const id of known) {
-    if (!incoming.has(id)) {
-      targetState.models[id].removedAt = Date.now();
-      targetState.models[id].enabled = false;
+  // Mark removed
+  for (const [id, row] of known) {
+    if (!incoming.has(id) && !row.removed_at) {
+      await query(
+        `UPDATE models SET removed_at = now(), enabled = false
+         WHERE target = $1 AND id = $2`,
+        [target, id]
+      );
       console.log(`[poller]   - model removed: ${id}`);
     }
   }
-  targetState.discoveredAt = Date.now();
-  targetState.lastModelRefresh = Date.now();
+  lastModelRefresh[target] = Date.now();
 }
 
 /* ---------- probe ---------- */
 function buildPayload(model) {
-  // Tiny, cheap request — the gateway shouldn't bill much for max_tokens=1.
   return {
     model,
     max_tokens: 1,
@@ -177,66 +170,128 @@ async function probe(target, model) {
   }
 }
 
-/* ---------- single probe cycle ---------- */
-async function runCycle(state) {
-  const cycleStarted = Date.now();
-  state.cycleCount++;
-  state.lastCycleAt = cycleStarted;
+/* ---------- single cycle ---------- */
+async function runCycle() {
+  const started = Date.now();
+  cycleCount++;
+  lastCheckAt = started;
 
   for (const target of CONFIG.targets) {
-    const tState = state.targets[target];
-
-    // Discover models if stale
-    const stale = Date.now() - (tState.lastModelRefresh || 0) > CONFIG.modelRefresh;
-    if (!tState.discoveredAt || stale) {
+    // Refresh models if stale
+    const stale = !lastModelRefresh[target] ||
+                  Date.now() - lastModelRefresh[target] > CONFIG.modelRefresh;
+    if (stale) {
       const ids = await discoverModels(target);
-      if (ids) reconcileModels(tState, ids);
+      if (ids) await reconcileModels(target, ids);
     }
 
-    // Probe each enabled model
-    const enabled = Object.values(tState.models).filter(m => m.enabled);
+    // Load enabled models for this target
+    const { rows: enabled } = await query(
+      `SELECT id FROM models WHERE target = $1 AND enabled = true AND removed_at IS NULL`,
+      [target]
+    );
     if (enabled.length === 0) continue;
 
+    // Probe all enabled models in parallel
     const results = await Promise.all(enabled.map(async m => {
       const r = await probe(target, m.id);
       return { modelId: m.id, ...r };
     }));
 
-    for (const r of results) {
-      const m = tState.models[r.modelId];
-      if (!m) continue;
-      m.last = { ok: r.ok, status: r.status, latency: r.latency, ts: r.ts, error: r.error };
-      m.history.push(m.last);
-      if (m.history.length > CONFIG.maxHistory) {
-        m.history.splice(0, m.history.length - CONFIG.maxHistory);
+    // Persist + cache
+    await tx(async client => {
+      for (const r of results) {
+        await client.query(
+          `INSERT INTO probes (target, model, ok, status, latency_ms, ts, error)
+           VALUES ($1, $2, $3, $4, $5, to_timestamp($6 / 1000.0), $7)`,
+          [target, r.modelId, r.ok, r.status, r.latency, r.ts, r.error ?? null]
+        );
+        pushHistory(target, r.modelId, {
+          ok: r.ok, status: r.status, latency: r.latency, ts: r.ts, error: r.error,
+        });
+        if (r.ok) {
+          if (!lastOkByTarget[target] || r.ts > lastOkByTarget[target]) {
+            lastOkByTarget[target] = r.ts;
+          }
+          if (r.ts > lastOkOverall) lastOkOverall = r.ts;
+        }
       }
-      if (r.ok) {
-        const prev = state.lastOkByTarget[target] || 0;
-        if (r.ts > prev) state.lastOkByTarget[target] = r.ts;
-        if (r.ts > state.lastOkOverall) state.lastOkOverall = r.ts;
-      }
-    }
-
-    tState.lastCycleAt = cycleStarted;
+    });
   }
 
-  state.lastCheckAt = cycleStarted;
-  saveState(state);
-  bus.emit("cycle", state);
+  bus.emit("cycle");
+}
+
+/* ---------- DB → cache bootstrap ---------- */
+async function hydrate() {
+  // Make sure the cache has an entry for every target/model in the DB
+  const { rows: all } = await query(
+    `SELECT target, id, enabled, removed_at FROM models`
+  );
+  for (const r of all) {
+    const m = ensureTarget(r.target);
+    if (!m.has(r.id)) m.set(r.id, { last: null, history48: [] });
+  }
+
+  // Pull the most recent 48 probes for every (target, model) so the
+  // frontend has something to draw on first paint.
+  const { rows: recent } = await query(`
+    SELECT DISTINCT ON (target, model)
+      target, model, ok, status, latency_ms, ts, error
+    FROM probes
+    ORDER BY target, model, ts DESC
+  `);
+  for (const r of recent) {
+    const m = ensureTarget(r.target).get(r.model);
+    if (!m) continue;
+    m.last = {
+      ok: r.ok, status: r.status,
+      latency: Number(r.latency_ms),
+      ts: new Date(r.ts).getTime(),
+      error: r.error,
+    };
+  }
+  // Pull last 48 per (target, model) for the sparkline
+  const { rows: histRows } = await query(`
+    SELECT * FROM (
+      SELECT target, model, ok, status, latency_ms, ts, error,
+             ROW_NUMBER() OVER (PARTITION BY target, model ORDER BY ts DESC) AS rn
+      FROM probes
+    ) s WHERE rn <= 48
+    ORDER BY target, model, ts ASC
+  `);
+  for (const r of histRows) {
+    const m = ensureTarget(r.target).get(r.model);
+    if (!m) continue;
+    m.history48.push({
+      ok: r.ok, status: r.status,
+      latency: Number(r.latency_ms),
+      ts: new Date(r.ts).getTime(),
+      error: r.error,
+    });
+  }
+
+  // last-ok aggregates
+  const { rows: okRows } = await query(`
+    SELECT target, MAX(EXTRACT(EPOCH FROM ts) * 1000)::bigint AS ts
+    FROM probes WHERE ok = true
+    GROUP BY target
+  `);
+  for (const r of okRows) lastOkByTarget[r.target] = Number(r.ts);
+  const { rows: okOverall } = await query(`
+    SELECT MAX(EXTRACT(EPOCH FROM ts) * 1000)::bigint AS ts
+    FROM probes WHERE ok = true
+  `);
+  if (okOverall[0]?.ts) lastOkOverall = Number(okOverall[0].ts);
 }
 
 /* ---------- scheduler ---------- */
-function nextDelay(state) {
-  // Use the most-recent probe across all targets to decide cadence.
-  let latest = 0;
-  let latestOk = true;
-  for (const target of CONFIG.targets) {
-    for (const m of Object.values(state.targets[target].models)) {
+function nextDelay() {
+  let latest = 0, latestOk = true;
+  for (const [, models] of cache) {
+    for (const [, m] of models) {
       if (!m.last) continue;
-      if (m.last.ts >= latest) {
-        latest = m.last.ts;
-        latestOk = m.last.ok;
-      }
+      if (m.last.ts >= latest) { latest = m.last.ts; latestOk = m.last.ok; }
     }
   }
   const base = latest || Date.now();
@@ -244,14 +299,14 @@ function nextDelay(state) {
   return Math.max(500, (base + interval) - Date.now());
 }
 
-async function scheduleLoop(state) {
+async function scheduleLoop() {
   while (!stopped) {
-    const delay = nextDelay(state);
+    const delay = nextDelay();
     bus.emit("schedule", { nextAt: Date.now() + delay, delay });
     await wait(delay);
     if (stopped) return;
     try {
-      await runCycle(state);
+      await runCycle();
     } catch (e) {
       console.error("[poller] cycle error:", e);
     }
@@ -262,28 +317,45 @@ async function scheduleLoop(state) {
 export const bus = new EventEmitter();
 let stopped = false;
 
-export function start() {
-  const state = loadState();
-  // Pre-seed empty target entries for any new URLs that didn't exist before
-  for (const t of CONFIG.targets) {
-    if (!state.targets[t]) {
-      state.targets[t] = { discoveredAt: 0, lastModelRefresh: 0, models: {} };
-    }
+export async function start() {
+  await hydrate();
+  for (const target of CONFIG.targets) {
+    if (!cache.has(target)) cache.set(target, new Map());
+    const ids = await discoverModels(target);
+    if (ids) await reconcileModels(target, ids);
   }
-  // Discover immediately on boot (don't wait 6h)
-  (async () => {
-    for (const target of CONFIG.targets) {
-      const ids = await discoverModels(target);
-      if (ids) reconcileModels(state.targets[target], ids);
-    }
-    saveState(state);
-    bus.emit("cycle", state);
-    scheduleLoop(state);
-  })();
-  return state;
+  bus.emit("cycle");
+  scheduleLoop();
 }
 
 export function stop() { stopped = true; }
 export function getConfig() { return { ...CONFIG }; }
 
-export { loadState, runCycle };
+export function snapshot() {
+  const targets = [];
+  for (const target of CONFIG.targets) {
+    const models = [];
+    const m = cache.get(target) || new Map();
+    for (const [id, data] of m) {
+      models.push({
+        id,
+        last: data.last,
+        history48: data.history48,
+      });
+    }
+    targets.push({
+      url: target,
+      lastModelRefresh: lastModelRefresh[target] || null,
+      lastOk: lastOkByTarget[target] || null,
+      models,
+    });
+  }
+  return {
+    targets,
+    lastOkOverall: lastOkOverall || null,
+    lastCheckAt: lastCheckAt || null,
+    cycleCount,
+  };
+}
+
+export { CONFIG, cache, lastOkByTarget, lastOkOverall };
