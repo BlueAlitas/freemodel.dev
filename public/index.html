@@ -162,6 +162,7 @@
     font-weight: 500;
   }
   .next-bar .mode.rapid { color: var(--warn); }
+  .next-bar .mode.confirming { color: var(--warn); }
 
   /* ─── Section heading ─────────────────────────────────────── */
   .sec-head {
@@ -735,12 +736,20 @@ function paintCountdown(data) {
   const tag = $("modeTag");
   if (data.nextCheckAt) tag.dataset.nextAt = String(data.nextCheckAt);
   if (data.cadenceMs) tag.dataset.cadenceMs = String(data.cadenceMs);
+  if (data.healthyConfirmationRemaining != null) {
+    tag.dataset.confirmationRemaining = String(data.healthyConfirmationRemaining);
+  }
   const cadenceMs = data.cadenceMs || parseInt(tag.dataset.cadenceMs || "0", 10);
   const cadence = cadenceMs ? fmtCadence(cadenceMs) : (data.mode === "rapid" ? "1m" : "30m");
-  tag.className = "mode" + (data.mode === "rapid" ? " rapid" : "");
-  tag.textContent = data.mode === "rapid"
-    ? `▍ unhealthy · probing every ${cadence} until 2xx`
-    : `▍ healthy · probing every ${cadence}`;
+  tag.className = "mode" + (data.mode === "rapid" ? " rapid" : data.mode === "confirming" ? " confirming" : "");
+  if (data.mode === "rapid") {
+    tag.textContent = `▍ unhealthy · probing every ${cadence} until 2xx`;
+  } else if (data.mode === "confirming") {
+    const remaining = (data.healthyConfirmationRemaining ?? parseInt(tag.dataset.confirmationRemaining || "0", 10)) || 0;
+    tag.textContent = `▍ confirming · probing every ${cadence} for ${remaining} more ok requests`;
+  } else {
+    tag.textContent = `▍ healthy · probing every ${cadence}`;
+  }
 }
 
 function renderProbeChart(data) {
@@ -822,7 +831,8 @@ function startCountdownTicker() {
     paintCountdown({
       nextCheckAt: parseInt(tag.dataset.nextAt || "0", 10) || 0,
       cadenceMs: parseInt(tag.dataset.cadenceMs || "0", 10) || 0,
-      mode: tag.classList.contains("rapid") ? "rapid" : "healthy",
+      healthyConfirmationRemaining: parseInt(tag.dataset.confirmationRemaining || "0", 10) || 0,
+      mode: tag.classList.contains("rapid") ? "rapid" : tag.classList.contains("confirming") ? "confirming" : "healthy",
     });
   }, 1000);
 }

@@ -2,7 +2,7 @@
 
 Live status and latency for the freemodel.dev LLM gateway, with lightweight unique visitor stats.
 
-* **Polling**: probes run once on server start, then every 30 min if the last probe was 2xx, otherwise every minute until a 2xx is observed.
+* **Polling**: probes run once on server start, then every minute until 50 consecutive probe requests are 2xx. Any failure resets that counter. After confirmation, probes run every 30 min.
 * **Targets**: `https://cc.freemodel.dev` and `https://api-cc.freemodel.dev` (Anthropic-compatible).
 * **Models**: discovered dynamically from `GET /v1/models` on each target; configurable test set via `TEST_MODELS`.
 * **Storage**: PostgreSQL (auto-creates tables on boot).
@@ -69,6 +69,7 @@ DATABASE_URL=postgres://fm:fm@localhost:5432/freemodel_status
 | `CLAUDE_CODE_BILLING_HEADER` | `cc_version=2.1.185.042; cc_entrypoint=cli;` | Billing-header text embedded in the probe system prompt. |
 | `INTERVAL_HEALTHY_MS` | `1800000` | 30 min — used when last probe was 2xx. |
 | `INTERVAL_RETRY_MS` | `60000` | 1 min — used until a 2xx is observed. |
+| `HEALTHY_CONFIRMATION_REQUESTS` | `50` | Keep retry cadence until this many consecutive probe requests are 2xx; any failure resets the counter. |
 | `MODEL_REFRESH_MS` | `21600000` | How often to re-fetch `/v1/models`. |
 | `TRACK_PATHS` | `/` | Comma-separated path prefixes that get visitor tracking. `/api/*` is always excluded. |
 | `ACTIVE_WINDOW_MIN` | `5` | "Active now" window. |

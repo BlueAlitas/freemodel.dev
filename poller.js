@@ -48,6 +48,7 @@ const CONFIG = {
   intervalRetry:   envMs("INTERVAL_RETRY_MS",       60 * 1000),
   modelRefresh:    envMs("MODEL_REFRESH_MS",     6 * 60 * 60 * 1000),
   probeTimeoutMs:  envInt("PROBE_TIMEOUT_MS", 30000),
+  healthyConfirmationRequests: envInt("HEALTHY_CONFIRMATION_REQUESTS", 50),
 };
 
 const DEFAULT_PROBE_MODEL = "claude-haiku-4-5-20251001";
@@ -71,6 +72,7 @@ let lastOkByTarget = {};   // target -> ms epoch
 let lastOkOverall = 0;
 let lastCheckAt = 0;
 let cycleCount = 0;
+let okProbeStreak = 0;
 let lastModelRefresh = {}; // target -> ms epoch
 
 function ensureTarget(t) {
@@ -84,6 +86,16 @@ function pushHistory(target, model, probe) {
   m.last = probe;
   m.history48.push(probe);
   if (m.history48.length > 48) m.history48.shift();
+}
+
+function recordCadenceResults(results) {
+  for (const r of results) {
+    okProbeStreak = r.ok ? okProbeStreak + 1 : 0;
+  }
+}
+
+function shouldUseRetryCadence(latest, latestOk) {
+  return !latest || !latestOk || okProbeStreak < CONFIG.healthyConfirmationRequests;
 }
 
 /* ---------- discovery ---------- */
@@ -389,6 +401,7 @@ async function runCycle() {
         }
       }
     });
+    recordCadenceResults(results);
   }
 
   bus.emit("cycle");
@@ -455,6 +468,18 @@ async function hydrate() {
     FROM probes WHERE ok = true
   `);
   if (okOverall[0]?.ts) lastOkOverall = Number(okOverall[0].ts);
+
+  const { rows: streakRows } = await query(`
+    SELECT ok
+    FROM probes
+    ORDER BY ts DESC, id DESC
+    LIMIT $1
+  `, [CONFIG.healthyConfirmationRequests]);
+  okProbeStreak = 0;
+  for (const r of streakRows) {
+    if (!r.ok) break;
+    okProbeStreak++;
+  }
 }
 
 /* ---------- scheduler ---------- */
@@ -467,7 +492,7 @@ function nextDelay() {
     }
   }
   const base = latest || Date.now();
-  const interval = !latest || !latestOk ? CONFIG.intervalRetry : CONFIG.intervalHealthy;
+  const interval = shouldUseRetryCadence(latest, latestOk) ? CONFIG.intervalRetry : CONFIG.intervalHealthy;
   return Math.max(500, (base + interval) - Date.now());
 }
 
@@ -535,6 +560,8 @@ export function snapshot() {
     lastOkOverall: lastOkOverall || null,
     lastCheckAt: lastCheckAt || null,
     cycleCount,
+    okProbeStreak,
+    healthyConfirmationRequests: CONFIG.healthyConfirmationRequests,
   };
 }
 

@@ -284,15 +284,21 @@ async function buildStatusPayload() {
       if (m.last.ts >= latest) { latest = m.last.ts; latestOk = m.last.ok; }
     }
   }
-  const interval = !latest || !latestOk ? config.intervalRetry : config.intervalHealthy;
+  const okProbeStreak = snap.okProbeStreak ?? 0;
+  const healthyConfirmationRequests = snap.healthyConfirmationRequests ?? config.healthyConfirmationRequests ?? 50;
+  const confirmingHealthy = !!latest && latestOk && okProbeStreak < healthyConfirmationRequests;
+  const interval = !latest || !latestOk || confirmingHealthy ? config.intervalRetry : config.intervalHealthy;
   const nextAt = latest ? latest + interval : Date.now() + interval;
-  const mode = latest && latestOk ? "healthy" : "rapid";
+  const mode = confirmingHealthy ? "confirming" : latest && latestOk ? "healthy" : "rapid";
 
   return {
     overall,
     mode,
     cadenceMs: interval,
     nextCheckAt: nextAt,
+    okProbeStreak,
+    healthyConfirmationRequests,
+    healthyConfirmationRemaining: Math.max(0, healthyConfirmationRequests - okProbeStreak),
     lastCheckAt: snap.lastCheckAt,
     lastOkOverall: snap.lastOkOverall,
     cycleCount: snap.cycleCount,
