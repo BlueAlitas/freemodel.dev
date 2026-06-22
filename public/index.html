@@ -1,0 +1,530 @@
+<!doctype html>
+<html lang="en" color-scheme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>freemodel.dev — status</title>
+<meta name="description" content="Live status & latency for the freemodel.dev LLM gateway." />
+<meta name="theme-color" content="#0d0d0d" />
+<style>
+  :root {
+    --bg: #0d0d0d;
+    --bg-warm: #161616;
+    --bg-card: #1a1a1a;
+    --ink: #f3f4f6;
+    --ink-soft: #d1d5db;
+    --ink-muted: #9ca3af;
+    --line: #2a2a2a;
+    --line-soft: #1f1f1f;
+    --accent-ink: #34d399;
+    --accent-bg: #052e1a;
+    --ok: #34d399;
+    --warn: #fbbf24;
+    --bad: #f87171;
+    --down: #ef4444;
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter",
+      "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    min-height: 100vh;
+  }
+  a { color: inherit; text-decoration: none; }
+
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 32px 24px 80px; }
+
+  /* ─── Header ──────────────────────────────────────────────── */
+  header.top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding-bottom: 24px;
+    border-bottom: 1px solid var(--line-soft);
+    margin-bottom: 32px;
+    flex-wrap: wrap;
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    font-size: 17px;
+  }
+  .brand .dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--ink-muted);
+    box-shadow: 0 0 0 0 transparent;
+    transition: background .3s ease, box-shadow .3s ease;
+  }
+  .brand .dot.ok   { background: var(--ok);   box-shadow: 0 0 0 4px rgba(52,211,153,0.12); }
+  .brand .dot.warn { background: var(--warn); box-shadow: 0 0 0 4px rgba(251,191,36,0.12); }
+  .brand .dot.bad  { background: var(--bad);  box-shadow: 0 0 0 4px rgba(248,113,113,0.12); }
+  .brand .dot.down { background: var(--down); box-shadow: 0 0 0 4px rgba(239,68,68,0.14); animation: pulse 1.4s ease-in-out infinite; }
+  @keyframes pulse {
+    0%,100% { box-shadow: 0 0 0 4px rgba(239,68,68,0.14); }
+    50%     { box-shadow: 0 0 0 8px rgba(239,68,68,0.05); }
+  }
+  .brand .name b { color: var(--accent-ink); font-weight: 600; }
+  .brand .name .tld { color: var(--ink-soft); font-weight: 500; }
+
+  .top-right { display: flex; align-items: center; gap: 12px; color: var(--ink-muted); font-size: 13px; flex-wrap: wrap; }
+  .top-right .pill {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 6px 10px;
+    border: 1px solid var(--line);
+    background: var(--bg-warm);
+    border-radius: 999px;
+    color: var(--ink-soft);
+    font-variant-numeric: tabular-nums;
+  }
+  .top-right .pill .lbl { color: var(--ink-muted); }
+  .top-right .pill .val { color: var(--ink); }
+
+  /* ─── Hero card ───────────────────────────────────────────── */
+  .hero {
+    background: var(--bg-card);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 28px;
+    display: grid;
+    grid-template-columns: 1.2fr 1fr;
+    gap: 28px;
+    margin-bottom: 24px;
+    position: relative;
+    overflow: hidden;
+  }
+  .hero::before {
+    content: "";
+    position: absolute; inset: 0;
+    background: radial-gradient(600px 200px at 20% -20%, rgba(52,211,153,0.07), transparent 60%);
+    pointer-events: none;
+  }
+  @media (max-width: 640px) { .hero { grid-template-columns: 1fr; } }
+
+  .hero .label {
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-size: 11px;
+    color: var(--ink-muted);
+    margin-bottom: 10px;
+  }
+  .status-row { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+  .status-word {
+    font-size: 40px; font-weight: 600; letter-spacing: -0.02em;
+    line-height: 1.05;
+  }
+  .status-word.ok   { color: var(--ok); }
+  .status-word.warn { color: var(--warn); }
+  .status-word.bad  { color: var(--bad); }
+  .status-word.down { color: var(--down); }
+  .status-word.unknown { color: var(--ink-muted); }
+
+  .status-sub { margin-top: 8px; color: var(--ink-soft); font-size: 14px; }
+  .status-sub .muted { color: var(--ink-muted); }
+
+  .latency-block { display: flex; flex-direction: column; justify-content: center; }
+  .latency-big {
+    font-size: 44px; font-weight: 600; letter-spacing: -0.02em;
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+  }
+  .latency-big small { font-size: 18px; color: var(--ink-muted); font-weight: 500; margin-left: 4px; }
+  .latency-meta { color: var(--ink-muted); font-size: 13px; margin-top: 8px; display: flex; gap: 14px; flex-wrap: wrap; }
+  .latency-meta span b { color: var(--ink-soft); font-weight: 500; }
+
+  /* ─── Next check indicator ────────────────────────────────── */
+  .next-bar {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 12px;
+    margin: 0 0 24px;
+    padding: 10px 14px;
+    background: var(--bg-warm);
+    border: 1px solid var(--line-soft);
+    border-radius: 10px;
+    color: var(--ink-soft);
+    font-size: 13px;
+    flex-wrap: wrap;
+  }
+  .next-bar .lbl { color: var(--ink-muted); }
+  .next-bar .val { color: var(--ink); font-variant-numeric: tabular-nums; }
+  .next-bar .mode {
+    display: inline-flex; align-items: center; gap: 6px;
+    color: var(--accent-ink);
+    font-weight: 500;
+  }
+  .next-bar .mode.rapid { color: var(--warn); }
+
+  /* ─── Section heading ─────────────────────────────────────── */
+  .sec-head {
+    display: flex; align-items: baseline; justify-content: space-between;
+    margin: 28px 0 12px;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .sec-head h2 {
+    margin: 0;
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--ink-muted);
+    font-weight: 500;
+  }
+  .sec-head .legend { color: var(--ink-muted); font-size: 12px; }
+
+  /* ─── Target section ──────────────────────────────────────── */
+  .target {
+    background: var(--bg-card);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 18px 18px 12px;
+    margin-bottom: 16px;
+  }
+  .target-head {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 12px; flex-wrap: wrap;
+    margin-bottom: 14px;
+  }
+  .target-url {
+    font-family: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+    font-size: 13px;
+    color: var(--ink-soft);
+    display: inline-flex; align-items: center; gap: 10px;
+  }
+  .target-url .led {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--ink-muted);
+    flex-shrink: 0;
+  }
+  .target-url .led.ok   { background: var(--ok); }
+  .target-url .led.warn { background: var(--warn); }
+  .target-url .led.bad  { background: var(--bad); }
+  .target-url .led.down { background: var(--down); }
+  .target-url .removed { color: var(--ink-muted); font-size: 12px; }
+
+  .target-meta { color: var(--ink-muted); font-size: 12px; display: flex; gap: 14px; flex-wrap: wrap; }
+  .target-meta b { color: var(--ink-soft); font-weight: 500; }
+
+  /* ─── Model grid ──────────────────────────────────────────── */
+  .models {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 12px;
+  }
+  .model {
+    background: var(--bg-warm);
+    border: 1px solid var(--line-soft);
+    border-radius: 10px;
+    padding: 12px 14px;
+    display: flex; flex-direction: column; gap: 8px;
+    opacity: 1;
+    transition: opacity .2s ease;
+  }
+  .model.disabled { opacity: 0.55; }
+  .model.removed  { opacity: 0.4; text-decoration: line-through; text-decoration-color: var(--ink-muted); }
+
+  .model .row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .model .name {
+    font-family: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+    color: var(--ink);
+    font-size: 13px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .model .name .badge {
+    display: inline-block;
+    margin-left: 8px;
+    padding: 1px 6px;
+    font-size: 10px;
+    border-radius: 999px;
+    background: var(--line);
+    color: var(--ink-muted);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", sans-serif;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  .model .lat { color: var(--ink); font-variant-numeric: tabular-nums; font-size: 13px; }
+  .model .meta { color: var(--ink-muted); font-size: 12px; display: flex; justify-content: space-between; }
+  .model .led {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--ink-muted);
+    flex-shrink: 0;
+  }
+  .model .led.ok   { background: var(--ok); }
+  .model .led.warn { background: var(--warn); }
+  .model .led.bad  { background: var(--bad); }
+  .model .led.down { background: var(--down); }
+
+  .model .spark {
+    display: flex; align-items: flex-end; gap: 2px;
+    height: 28px;
+    margin-top: 2px;
+  }
+  .model .spark .b {
+    flex: 1 1 0;
+    min-width: 2px;
+    background: var(--line);
+    border-radius: 2px 2px 0 0;
+    transition: background .2s ease;
+  }
+  .model .spark .b.ok   { background: var(--ok); }
+  .model .spark .b.warn { background: var(--warn); }
+  .model .spark .b.bad  { background: var(--bad); }
+  .model .spark .b.down { background: var(--down); }
+
+  /* ─── Footer ──────────────────────────────────────────────── */
+  footer.bot {
+    margin-top: 40px;
+    padding-top: 20px;
+    border-top: 1px solid var(--line-soft);
+    color: var(--ink-muted);
+    font-size: 12px;
+    display: flex; flex-wrap: wrap; gap: 16px; justify-content: space-between;
+  }
+  footer.bot a { color: var(--ink-soft); }
+  footer.bot a:hover { color: var(--accent-ink); }
+
+  .mono { font-family: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace; }
+</style>
+</head>
+<body>
+  <div class="wrap">
+
+    <header class="top">
+      <div class="brand">
+        <span class="dot" id="brandDot" aria-hidden="true"></span>
+        <span class="name"><b>freemodel</b><span class="tld">.dev</span> &nbsp;·&nbsp; status</span>
+      </div>
+      <div class="top-right">
+        <span class="pill"><span class="lbl">last&nbsp;ok</span><span class="val mono" id="lastOk">—</span></span>
+        <span class="pill"><span class="lbl">cycles</span><span class="val mono" id="cycles">—</span></span>
+      </div>
+    </header>
+
+    <section class="hero" aria-label="Overall status">
+      <div>
+        <div class="label">All systems</div>
+        <div class="status-row">
+          <div class="status-word" id="statusWord">…</div>
+        </div>
+        <div class="status-sub" id="statusSub"><span class="muted">Loading…</span></div>
+      </div>
+      <div class="latency-block">
+        <div class="label">Gateway latency · last hour</div>
+        <div class="latency-big"><span id="p50">—</span><small>ms</small></div>
+        <div class="latency-meta">
+          <span>p10 <b id="p10">—</b></span>
+          <span>p90 <b id="p90">—</b></span>
+          <span>p99 <b id="p99">—</b></span>
+        </div>
+      </div>
+    </section>
+
+    <div class="next-bar">
+      <div>
+        <span class="lbl">next check in</span>
+        <span class="val mono" id="nextIn">—</span>
+      </div>
+      <div>
+        <span class="mode" id="modeTag">▍ healthy · 30 min cadence</span>
+      </div>
+    </div>
+
+    <div id="targets"></div>
+
+    <footer class="bot">
+      <div>© freemodel.dev · all checks are best-effort</div>
+      <div>
+        <a href="https://fm.bluealitas.com/api/status" class="mono">/api/status</a>
+        &nbsp;·&nbsp;
+        <a href="https://fm.bluealitas.com/api/config" class="mono">/api/config</a>
+      </div>
+    </footer>
+  </div>
+
+<script>
+/* =================================================================
+ *  Frontend — fetches /api/status and renders.
+ *  Auto-refreshes every 15s + on visibility change.
+ * ================================================================= */
+
+const $ = (id) => document.getElementById(id);
+const STATUS_WORD = {
+  ok: "Operational",
+  warn: "Degraded",
+  bad: "Disrupted",
+  down: "Down",
+  unknown: "Awaiting probes…",
+};
+const fmtMs = (n) => n == null ? "—" : Math.round(n).toLocaleString();
+const fmtRel = (ts) => {
+  if (!ts) return "—";
+  const d = Math.max(0, Math.round((Date.now() - ts) / 1000));
+  if (d < 60)        return d + "s ago";
+  if (d < 3600)      return Math.floor(d/60) + "m ago";
+  if (d < 86400)     return Math.floor(d/3600) + "h ago";
+  return Math.floor(d/86400) + "d ago";
+};
+const fmtClock = (ms) => {
+  const s = Math.max(0, Math.round(ms / 1000));
+  const m = Math.floor(s / 60), r = s % 60;
+  return m > 0 ? `${m}m ${r}s` : `${r}s`;
+};
+
+function spark(history) {
+  if (!history || !history.length) return "";
+  const max = Math.max(1, ...history.map(h => h.latency));
+  return history.map(h => {
+    const cls = !h.ok ? "down" : h.latency > 1500 ? "warn" : h.latency > 4000 ? "bad" : "ok";
+    const h_ = Math.max(4, Math.round((h.latency / max) * 26));
+    return `<span class="b ${cls}" style="height:${h_}px"></span>`;
+  }).join("");
+}
+
+function ledClass(m) {
+  if (!m.last) return "";
+  if (!m.last.ok) return "down";
+  if (m.last.latency > 4000) return "bad";
+  if (m.last.latency > 1500) return "warn";
+  return "ok";
+}
+
+function render(data) {
+  // Brand dot
+  const dotCls = data.overall === "ok" ? "ok"
+               : data.overall === "warn" ? "warn"
+               : data.overall === "down" ? "down"
+               : "";
+  $("brandDot").className = "dot " + dotCls;
+
+  // Hero
+  $("statusWord").textContent = STATUS_WORD[data.overall] || "…";
+  $("statusWord").className = "status-word " + (data.overall === "unknown" ? "unknown" : data.overall);
+
+  $("statusSub").innerHTML = data.lastOkOverall
+    ? `All systems responding normally. <span class="muted">Last successful check ${fmtRel(data.lastOkOverall)}.</span>`
+    : `<span class="muted">${
+        data.overall === "down" ? "No endpoint is responding. Retrying every minute…" :
+        data.overall === "warn" ? "Some endpoints are failing. Investigating…" :
+        "Waiting for first probe to complete."
+      }</span>`;
+
+  $("lastOk").textContent = data.lastOkOverall ? fmtRel(data.lastOkOverall) : "—";
+  $("cycles").textContent = data.cycleCount ?? "—";
+
+  // Aggregate latency across all enabled models in last hour
+  const latSamples = [];
+  for (const t of data.targets) {
+    for (const m of t.models) {
+      if (!m.enabled) continue;
+      for (const h of (m.history48 || [])) {
+        if (h.ok) latSamples.push(h.latency);
+      }
+    }
+  }
+  latSamples.sort((a, b) => a - b);
+  const q = (p) => latSamples.length ? latSamples[Math.min(latSamples.length - 1, Math.floor(p * latSamples.length))] : null;
+  $("p10").textContent = fmtMs(q(0.10));
+  $("p50").textContent = fmtMs(q(0.50));
+  $("p90").textContent = fmtMs(q(0.90));
+  $("p99").textContent = fmtMs(q(0.99));
+
+  // Per-target sections
+  $("targets").innerHTML = data.targets.map(t => {
+    const statusLabel = STATUS_WORD[t.status] || t.status;
+    const models = t.models.map(m => {
+      const cls = ledClass(m);
+      const removed = !!m.removedAt;
+      const disabled = !m.enabled && !removed;
+      const wrapCls = removed ? "removed" : disabled ? "disabled" : "";
+      const badge = removed ? `<span class="badge">removed</span>`
+                   : disabled ? `<span class="badge">idle</span>`
+                   : "";
+      return `
+        <div class="model ${wrapCls}">
+          <div class="row">
+            <span class="name">${m.id}${badge}</span>
+            <span class="led ${cls}"></span>
+          </div>
+          <div class="row">
+            <span class="lat mono">${m.last ? fmtMs(m.last.latency) + " ms" : "—"}</span>
+            <span class="meta">${m.last ? (m.last.ok ? m.last.status : "fail") : "—"}</span>
+          </div>
+          <div class="spark">${spark(m.history48)}</div>
+          <div class="row meta">
+            <span>${m.p50 != null ? `p50 ${m.p50}ms` : "p50 —"}</span>
+            <span>uptime24 ${m.uptime24 == null ? "—" : m.uptime24.toFixed(1) + "%"}</span>
+          </div>
+        </div>`;
+    }).join("");
+
+    return `
+      <section class="target">
+        <div class="target-head">
+          <div class="target-url">
+            <span class="led ${t.status === 'ok' ? 'ok' : t.status === 'warn' ? 'warn' : t.status === 'down' ? 'down' : ''}"></span>
+            ${t.url}
+          </div>
+          <div class="target-meta">
+            <span>status <b>${statusLabel}</b></span>
+            <span>last&nbsp;ok <b>${t.lastOk ? fmtRel(t.lastOk) : "—"}</b></span>
+            <span>probed <b>${t.lastCycleAt ? fmtRel(t.lastCycleAt) : "—"}</b></span>
+          </div>
+        </div>
+        <div class="models">${models || `<div class="model disabled"><div class="row"><span class="name muted">no models discovered yet</span></div></div>`}</div>
+      </section>`;
+  }).join("");
+
+  // Next-check countdown
+  paintCountdown(data);
+}
+
+function paintCountdown(data) {
+  const remain = Math.max(0, (data.nextCheckAt || Date.now()) - Date.now());
+  $("nextIn").textContent = fmtClock(remain);
+  const tag = $("modeTag");
+  tag.className = "mode" + (data.mode === "rapid" ? " rapid" : "");
+  tag.textContent = data.mode === "rapid"
+    ? "▍ unhealthy · probing every 1 min until 2xx"
+    : "▍ healthy · probing every 30 min";
+}
+
+/* ---------- fetching ---------- */
+async function tick() {
+  try {
+    const res = await fetch("/api/status", { cache: "no-store" });
+    if (!res.ok) throw new Error("status " + res.status);
+    const data = await res.json();
+    render(data);
+  } catch (e) {
+    $("statusSub").innerHTML = `<span class="muted">Failed to load /api/status: ${e.message}</span>`;
+  }
+}
+
+let countdownTimer = null;
+function startCountdownTicker() {
+  if (countdownTimer) clearInterval(countdownTimer);
+  countdownTimer = setInterval(() => {
+    const tag = $("modeTag");
+    paintCountdown({ nextCheckAt: parseInt(tag.dataset.nextAt || "0", 10) || 0, mode: tag.classList.contains("rapid") ? "rapid" : "healthy" });
+  }, 1000);
+}
+
+(async function boot() {
+  await tick();
+  startCountdownTicker();
+  setInterval(tick, 15000);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") tick();
+  });
+})();
+</script>
+</body>
+</html>

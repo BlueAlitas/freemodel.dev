@@ -1,0 +1,70 @@
+# freemodel.dev status page
+# Drop into Dokploy as a "Docker Compose" service.
+# Domain: fm.bluealitas.com — auto-TLS via Dokploy's Traefik (letsencrypt).
+#
+# Required env (set in Dokploy → Environment):
+#   FREEMODEL_TOKEN       Bearer token for the cc.freemodel.dev probes.
+#   ANTHROPIC_VERSION     (optional) default 2023-06-01
+#   TEST_MODELS           (optional) default claude-haiku-4-5-20251001
+#   INTERVAL_HEALTHY_MS   (optional) default 1800000  (30 min)
+#   INTERVAL_RETRY_MS     (optional) default 60000     (1 min)
+
+services:
+  status:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: freemodel-status:latest
+    container_name: freemodel-status
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      FREEMODEL_TOKEN: ${FREEMODEL_TOKEN:-}
+      ANTHROPIC_VERSION: ${ANTHROPIC_VERSION:-2023-06-01}
+      TARGET_URLS: ${TARGET_URLS:-https://cc.freemodel.dev,https://api-cc.freemodel.dev}
+      TEST_MODELS: ${TEST_MODELS:-claude-haiku-4-5-20251001}
+      INTERVAL_HEALTHY_MS: ${INTERVAL_HEALTHY_MS:-1800000}
+      INTERVAL_RETRY_MS: ${INTERVAL_RETRY_MS:-60000}
+      MODEL_REFRESH_MS: ${MODEL_REFRESH_MS:-21600000}
+      DATA_PATH: /app/data/status.json
+    volumes:
+      - status-data:/app/data
+    networks:
+      - dokploy-network
+    labels:
+      # ─── Traefik core ────────────────────────────────────────
+      - "traefik.enable=true"
+      - "traefik.docker.network=dokploy-network"
+
+      # ─── HTTPS router (fm.bluealitas.com) ───────────────────
+      - "traefik.http.routers.fm-bluealitas.rule=Host(`fm.bluealitas.com`)"
+      - "traefik.http.routers.fm-bluealitas.entrypoints=websecure"
+      - "traefik.http.routers.fm-bluealitas.tls=true"
+      - "traefik.http.routers.fm-bluealitas.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.fm-bluealitas.service=fm-bluealitas-svc"
+
+      # ─── HTTP → HTTPS redirect ──────────────────────────────
+      - "traefik.http.routers.fm-bluealitas-http.rule=Host(`fm.bluealitas.com`)"
+      - "traefik.http.routers.fm-bluealitas-http.entrypoints=web"
+      - "traefik.http.routers.fm-bluealitas-http.middlewares=redirect-to-https@docker"
+      - "traefik.http.routers.fm-bluealitas-http.service=fm-bluealitas-svc"
+
+      # ─── Service (load balancer) ────────────────────────────
+      - "traefik.http.services.fm-bluealitas-svc.loadbalancer.server.port=3000"
+      - "traefik.http.services.fm-bluealitas-svc.loadbalancer.serverstransport=insecure@docker"
+
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+networks:
+  dokploy-network:
+    external: true
+    name: dokploy-network
+
+volumes:
+  status-data:
