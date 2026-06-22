@@ -212,6 +212,21 @@
 
   .target-meta { color: var(--ink-muted); font-size: 12px; display: flex; gap: 14px; flex-wrap: wrap; }
   .target-meta b { color: var(--ink-soft); font-weight: 500; }
+  .target-error {
+    margin: -4px 0 12px;
+    padding: 8px 10px;
+    border: 1px solid rgba(248,113,113,0.24);
+    background: rgba(248,113,113,0.08);
+    border-radius: 8px;
+    color: var(--bad);
+    font-size: 12px;
+    line-height: 1.4;
+    overflow-wrap: anywhere;
+  }
+  .target-error .src {
+    color: var(--ink-soft);
+    font-family: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  }
 
   /* ─── Model grid ──────────────────────────────────────────── */
   .models {
@@ -252,6 +267,16 @@
   }
   .model .lat { color: var(--ink); font-variant-numeric: tabular-nums; font-size: 13px; }
   .model .meta { color: var(--ink-muted); font-size: 12px; display: flex; justify-content: space-between; }
+  .model .error {
+    color: var(--bad);
+    background: rgba(248,113,113,0.08);
+    border: 1px solid rgba(248,113,113,0.18);
+    border-radius: 8px;
+    padding: 7px 8px;
+    font-size: 12px;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+  }
   .model .led {
     width: 8px; height: 8px; border-radius: 50%;
     background: var(--ink-muted);
@@ -556,6 +581,20 @@ const fmtCadence = (ms) => {
   if (s >= 60 && s % 60 === 0) return `${s / 60}m`;
   return fmtClock(ms);
 };
+const esc = (value) => String(value ?? "").replace(/[&<>"']/g, ch => ({
+  "&": "&amp;",
+  "<": "&lt;",
+  ">": "&gt;",
+  "\"": "&quot;",
+  "'": "&#39;",
+}[ch]));
+const clip = (value, max = 180) => {
+  const s = String(value ?? "");
+  return s.length > max ? s.slice(0, max - 1) + "…" : s;
+};
+const hostOf = (url) => {
+  try { return new URL(url).hostname; } catch { return url || "unknown"; }
+};
 
 function probeState(h) {
   if (!h.ok) return "down";
@@ -642,16 +681,21 @@ function render(data) {
       const badge = removed ? `<span class="badge">removed</span>`
                    : disabled ? `<span class="badge">idle</span>`
                    : "";
+      const statusText = m.last ? (m.last.ok ? m.last.status : (m.last.status || "network")) : "—";
+      const error = m.last && !m.last.ok && m.last.error
+        ? `<div class="error">${esc(m.last.error)}</div>`
+        : "";
       return `
         <div class="model ${wrapCls}">
           <div class="row">
-            <span class="name">${m.id}${badge}</span>
+            <span class="name">${esc(m.id)}${badge}</span>
             <span class="led ${cls}"></span>
           </div>
           <div class="row">
             <span class="lat mono">${m.last ? fmtMs(m.last.latency) + " ms" : "—"}</span>
-            <span class="meta">${m.last ? (m.last.ok ? m.last.status : "fail") : "—"}</span>
+            <span class="meta">${esc(statusText)}</span>
           </div>
+          ${error}
           <div class="spark">${spark(m.history48)}</div>
           <div class="row meta">
             <span>${m.p50 != null ? `p50 ${m.p50}ms` : "p50 —"}</span>
@@ -659,20 +703,24 @@ function render(data) {
           </div>
         </div>`;
     }).join("");
+    const targetError = t.lastError
+      ? `<div class="target-error"><span class="src">${esc(t.lastError.model)}</span> · ${esc(t.lastError.error)}</div>`
+      : "";
 
     return `
       <section class="target">
         <div class="target-head">
           <div class="target-url">
             <span class="led ${t.status === 'ok' ? 'ok' : t.status === 'warn' ? 'warn' : t.status === 'down' ? 'down' : ''}"></span>
-            ${t.url}
+            ${esc(t.url)}
           </div>
           <div class="target-meta">
-            <span>status <b>${statusLabel}</b></span>
+            <span>status <b>${esc(statusLabel)}</b></span>
             <span>last&nbsp;ok <b>${t.lastOk ? fmtRel(t.lastOk) : "—"}</b></span>
             <span>probed <b>${t.lastCycleAt ? fmtRel(t.lastCycleAt) : "—"}</b></span>
           </div>
         </div>
+        ${targetError}
         <div class="models">${models || `<div class="model disabled"><div class="row"><span class="name muted">no models discovered yet</span></div></div>`}</div>
       </section>`;
   }).join("");
@@ -730,8 +778,9 @@ function renderProbeChart(data) {
   $("probeChart").innerHTML = recent.map(p => {
     const h_ = Math.max(5, Math.round(((p.latency || 0) / max) * 78));
     const status = p.ok ? p.status : "fail";
-    const tip = `${new URL(p.target).hostname} · ${p.model} · ${status} · ${fmtMs(p.latency)}ms · ${fmtRel(p.ts)}`;
-    return `<span class="p ${p.state}" style="height:${h_}px" data-tip="${tip}"></span>`;
+    const err = p.error ? ` · ${clip(p.error)}` : "";
+    const tip = `${hostOf(p.target)} · ${p.model} · ${status} · ${fmtMs(p.latency)}ms · ${fmtRel(p.ts)}${err}`;
+    return `<span class="p ${p.state}" style="height:${h_}px" data-tip="${esc(tip)}"></span>`;
   }).join("");
 }
 

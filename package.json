@@ -6,7 +6,8 @@
   "description": "Status page + poller + unique visitor stats for the freemodel.dev LLM gateway.",
   "scripts": {
     "start": "node server.js",
-    "dev": "node --watch server.js"
+    "dev": "node --watch server.js",
+    "probe": "node probe.js"
   },
   "engines": {
     "node": ">=20"

@@ -18,6 +18,14 @@ npm start
 # → http://localhost:3000
 ```
 
+Run the Claude-Code-style Haiku probe without starting the server or using Postgres:
+
+```bash
+node probe.js
+# or
+node poller.js
+```
+
 You'll need a Postgres running locally. Quickest path:
 
 ```bash
@@ -55,8 +63,10 @@ DATABASE_URL=postgres://fm:fm@localhost:5432/freemodel_status
 | `DATABASE_URL` | _(required)_ | `postgres://user:pass@host:5432/db` |
 | `TARGET_URLS` | `https://cc.freemodel.dev,https://api-cc.freemodel.dev` | Comma-separated. |
 | `FREEMODEL_TOKEN` | _(empty)_ | Bearer token sent as `Authorization: Bearer …`. |
-| `ANTHROPIC_VERSION` | `2023-06-01` | Sent as `anthropic-version` header. |
 | `TEST_MODELS` | `claude-haiku-4-5-20251001` | `*` = test every discovered model. |
+| `PROBE_TARGET_URL` | `https://api-cc.freemodel.dev` | Default target for `node probe.js` / `node poller.js`. |
+| `PROBE_SESSION_TEXT` | `Calculate 1+1` | Session text embedded in the Claude Code title-generation probe prompt. |
+| `CLAUDE_CODE_BILLING_HEADER` | `cc_version=2.1.185.042; cc_entrypoint=cli;` | Billing-header text embedded in the probe system prompt. |
 | `INTERVAL_HEALTHY_MS` | `1800000` | 30 min — used when last probe was 2xx. |
 | `INTERVAL_RETRY_MS` | `60000` | 1 min — used until a 2xx is observed. |
 | `MODEL_REFRESH_MS` | `21600000` | How often to re-fetch `/v1/models`. |

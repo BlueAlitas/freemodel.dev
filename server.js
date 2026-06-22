@@ -248,12 +248,23 @@ async function buildStatusPayload() {
     else if (enabled.every(m => m.last && !m.last.ok)) status = "down";
     else if (!enabled.every(m => m.last?.ok)) status = "warn";
 
+    const lastError = enabled
+      .filter(m => m.last && !m.last.ok && m.last.error)
+      .sort((a, b) => (b.last?.ts || 0) - (a.last?.ts || 0))
+      .map(m => ({
+        model: m.id,
+        status: m.last.status,
+        error: m.last.error,
+        ts: m.last.ts,
+      }))[0] || null;
+
     targets.push({
       url: t.url,
       status,
       lastModelRefresh: t.lastModelRefresh,
       lastCycleAt: snap.lastCheckAt,
       lastOk: t.lastOk,
+      lastError,
       models: enriched,
     });
   }
