@@ -105,9 +105,14 @@
   .hero::before {
     content: "";
     position: absolute; inset: 0;
-    background: radial-gradient(600px 200px at 20% -20%, rgba(52,211,153,0.07), transparent 60%);
+    background: radial-gradient(600px 200px at 20% -20%, rgba(156,163,175,0.07), transparent 60%);
     pointer-events: none;
   }
+  .hero.ok::before { background: radial-gradient(600px 200px at 20% -20%, rgba(52,211,153,0.10), transparent 60%); }
+  .hero.confirming::before,
+  .hero.warn::before { background: radial-gradient(600px 200px at 20% -20%, rgba(251,191,36,0.12), transparent 60%); }
+  .hero.down::before,
+  .hero.bad::before { background: radial-gradient(600px 200px at 20% -20%, rgba(239,68,68,0.13), transparent 60%); }
   @media (max-width: 640px) { .hero { grid-template-columns: 1fr; } }
 
   .hero .label {
@@ -124,6 +129,7 @@
   }
   .status-word.ok   { color: var(--ok); }
   .status-word.warn { color: var(--warn); }
+  .status-word.confirming { color: var(--warn); }
   .status-word.bad  { color: var(--bad); }
   .status-word.down { color: var(--down); }
   .status-word.unknown { color: var(--ink-muted); }
@@ -468,7 +474,7 @@
       </div>
     </header>
 
-    <section class="hero" aria-label="Overall status">
+    <section class="hero" id="hero" aria-label="Overall status">
       <div>
         <div class="label">All systems</div>
         <div class="status-row">
@@ -625,22 +631,23 @@ function ledClass(m) {
 }
 
 function render(data) {
-  const displayOverall = data.mode === "confirming" ? "ok" : data.overall;
+  const displayOverall = data.mode === "confirming" ? "confirming" : data.overall;
+  $("hero").className = "hero " + (displayOverall === "unknown" ? "" : displayOverall);
   // Brand dot
   const dotCls = displayOverall === "ok" ? "ok"
-               : displayOverall === "warn" ? "warn"
+               : displayOverall === "warn" || displayOverall === "confirming" ? "warn"
                : displayOverall === "down" ? "down"
                : "";
   $("brandDot").className = "dot " + dotCls;
 
   // Hero
-  $("statusWord").textContent = STATUS_WORD[displayOverall] || "…";
+  $("statusWord").textContent = displayOverall === "confirming" ? "Confirming" : STATUS_WORD[displayOverall] || "…";
   $("statusWord").className = "status-word " + (displayOverall === "unknown" ? "unknown" : displayOverall);
 
   if (data.mode === "confirming") {
     const remaining = data.healthyConfirmationRemaining ?? 0;
     $("statusSub").className = "status-sub confirming";
-    $("statusSub").innerHTML = `Operational. <span class="muted">Confirming stability with ${remaining} more successful probe requests before returning to normal cadence.</span>`;
+    $("statusSub").innerHTML = `All current probes are passing. <span class="muted">Confirming stability with ${remaining} more successful probe requests before returning to normal cadence.</span>`;
   } else if (data.lastOkOverall) {
     $("statusSub").className = "status-sub";
     const prefix = data.overall === "ok"
