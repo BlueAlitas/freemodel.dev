@@ -71,6 +71,7 @@ const cache = new Map();
 let lastOkByTarget = {};   // target -> ms epoch
 let lastOkOverall = 0;
 let lastCheckAt = 0;
+let lastProbeAt = 0;
 let cycleCount = 0;
 let okProbeStreak = 0;
 let lastModelRefresh = {}; // target -> ms epoch
@@ -89,13 +90,25 @@ function pushHistory(target, model, probe) {
 }
 
 function recordCadenceResults(results) {
-  for (const r of results) {
-    okProbeStreak = r.ok ? okProbeStreak + 1 : 0;
+  if (!results.length) {
+    okProbeStreak = 0;
+    return;
   }
+  lastProbeAt = Math.max(lastProbeAt, ...results.map(r => r.ts || 0));
+  if (results.some(r => !r.ok)) {
+    okProbeStreak = 0;
+    return;
+  }
+  okProbeStreak += results.length;
 }
 
-function shouldUseRetryCadence(latest, latestOk) {
-  return !latest || !latestOk || okProbeStreak < CONFIG.healthyConfirmationRequests;
+function shouldUseRetryCadence() {
+  return !lastProbeAt || okProbeStreak < CONFIG.healthyConfirmationRequests;
+}
+
+function recordCycleError() {
+  okProbeStreak = 0;
+  lastProbeAt = Date.now();
 }
 
 /* ---------- discovery ---------- */
@@ -355,6 +368,7 @@ async function runCycle() {
   const started = Date.now();
   cycleCount++;
   lastCheckAt = started;
+  const cycleResults = [];
 
   for (const target of CONFIG.targets) {
     // Refresh models if stale
@@ -377,6 +391,7 @@ async function runCycle() {
       const r = await probe(target, m.id);
       return { modelId: m.id, ...r };
     }));
+    cycleResults.push(...results);
 
     // Persist + cache
     await tx(async client => {
@@ -401,8 +416,8 @@ async function runCycle() {
         }
       }
     });
-    recordCadenceResults(results);
   }
+  recordCadenceResults(cycleResults);
 
   bus.emit("cycle");
 }
@@ -468,6 +483,11 @@ async function hydrate() {
     FROM probes WHERE ok = true
   `);
   if (okOverall[0]?.ts) lastOkOverall = Number(okOverall[0].ts);
+  const { rows: lastProbeRows } = await query(`
+    SELECT MAX(EXTRACT(EPOCH FROM ts) * 1000)::bigint AS ts
+    FROM probes
+  `);
+  if (lastProbeRows[0]?.ts) lastProbeAt = Number(lastProbeRows[0].ts);
 
   const { rows: streakRows } = await query(`
     SELECT ok
@@ -484,15 +504,8 @@ async function hydrate() {
 
 /* ---------- scheduler ---------- */
 function nextDelay() {
-  let latest = 0, latestOk = true;
-  for (const [, models] of cache) {
-    for (const [, m] of models) {
-      if (!m.last) continue;
-      if (m.last.ts >= latest) { latest = m.last.ts; latestOk = m.last.ok; }
-    }
-  }
-  const base = latest || Date.now();
-  const interval = shouldUseRetryCadence(latest, latestOk) ? CONFIG.intervalRetry : CONFIG.intervalHealthy;
+  const base = lastProbeAt || Date.now();
+  const interval = shouldUseRetryCadence() ? CONFIG.intervalRetry : CONFIG.intervalHealthy;
   return Math.max(500, (base + interval) - Date.now());
 }
 
@@ -505,6 +518,7 @@ async function scheduleLoop() {
     try {
       await runCycle();
     } catch (e) {
+      recordCycleError();
       console.error("[poller] cycle error:", e);
     }
   }
@@ -514,6 +528,7 @@ async function runInitialCycleThenSchedule() {
   try {
     await runCycle();
   } catch (e) {
+    recordCycleError();
     console.error("[poller] initial cycle error:", e);
   }
   if (!stopped) scheduleLoop();
@@ -559,6 +574,7 @@ export function snapshot() {
     targets,
     lastOkOverall: lastOkOverall || null,
     lastCheckAt: lastCheckAt || null,
+    lastProbeAt: lastProbeAt || null,
     cycleCount,
     okProbeStreak,
     healthyConfirmationRequests: CONFIG.healthyConfirmationRequests,

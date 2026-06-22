@@ -146,6 +146,23 @@ const STATUS_LABEL = {
   unknown: "Awaiting probes…",
 };
 
+function summarizeTargetStatus(models) {
+  const enabled = models.filter(m => m.enabled && !m.removedAt);
+  if (!enabled.length) return "unknown";
+
+  const probed = enabled.filter(m => m.last);
+  if (!probed.length) return "unknown";
+
+  const okCount = probed.filter(m => m.last.ok).length;
+  const failCount = probed.length - okCount;
+  const pendingCount = enabled.length - probed.length;
+
+  if (okCount === enabled.length) return "ok";
+  if (okCount === 0 && failCount > 0) return "down";
+  if (failCount > 0 || pendingCount > 0) return "warn";
+  return "unknown";
+}
+
 /**
  * Percentiles (last hour) + uptime (last 24h) for a (target, model).
  * Computed as two cheap aggregations that can both use the existing
@@ -242,11 +259,8 @@ async function buildStatusPayload() {
       return a.id.localeCompare(b.id);
     });
 
-    const enabled = enriched.filter(m => m.enabled);
-    let status = "ok";
-    if (!enabled.length || !enabled.some(m => m.last)) status = "unknown";
-    else if (enabled.every(m => m.last && !m.last.ok)) status = "down";
-    else if (!enabled.every(m => m.last?.ok)) status = "warn";
+    const enabled = enriched.filter(m => m.enabled && !m.removedAt);
+    const status = summarizeTargetStatus(enriched);
 
     const lastError = enabled
       .filter(m => m.last && !m.last.ok && m.last.error)
@@ -276,20 +290,22 @@ async function buildStatusPayload() {
   else if (ss.some(s => s === "down")) overall = "down";
   else if (ss.some(s => s === "warn" || s === "unknown")) overall = "warn";
 
-  // Cadence based on most recent probe overall
+  // Cadence is based on aggregate health and the consecutive-success counter.
   let latest = 0, latestOk = true;
   for (const t of targets) {
     for (const m of t.models) {
-      if (!m.last) continue;
+      if (!m.enabled || m.removedAt || !m.last) continue;
       if (m.last.ts >= latest) { latest = m.last.ts; latestOk = m.last.ok; }
     }
   }
   const okProbeStreak = snap.okProbeStreak ?? 0;
   const healthyConfirmationRequests = snap.healthyConfirmationRequests ?? config.healthyConfirmationRequests ?? 50;
   const confirmingHealthy = overall === "ok" && !!latest && latestOk && okProbeStreak < healthyConfirmationRequests;
-  const interval = !latest || !latestOk || confirmingHealthy ? config.intervalRetry : config.intervalHealthy;
-  const nextAt = latest ? latest + interval : Date.now() + interval;
-  const mode = confirmingHealthy ? "confirming" : latest && latestOk ? "healthy" : "rapid";
+  const useRetryCadence = overall !== "ok" || !latest || !latestOk || confirmingHealthy;
+  const interval = useRetryCadence ? config.intervalRetry : config.intervalHealthy;
+  const cadenceBase = snap.lastProbeAt || latest || Date.now();
+  const nextAt = cadenceBase + interval;
+  const mode = confirmingHealthy ? "confirming" : overall === "ok" && latest && latestOk ? "healthy" : "rapid";
 
   return {
     overall,

@@ -22,6 +22,8 @@
     --warn: #fbbf24;
     --bad: #f87171;
     --down: #ef4444;
+    --slow: #60a5fa;
+    --very-slow: #fbbf24;
     color-scheme: dark;
   }
 
@@ -292,8 +294,8 @@
     flex-shrink: 0;
   }
   .model .led.ok   { background: var(--ok); }
-  .model .led.warn { background: var(--warn); }
-  .model .led.bad  { background: var(--bad); }
+  .model .led.warn { background: var(--slow); }
+  .model .led.bad  { background: var(--very-slow); }
   .model .led.down { background: var(--down); }
 
   .model .spark {
@@ -309,8 +311,8 @@
     transition: background .2s ease;
   }
   .model .spark .b.ok   { background: var(--ok); }
-  .model .spark .b.warn { background: var(--warn); }
-  .model .spark .b.bad  { background: var(--bad); }
+  .model .spark .b.warn { background: var(--slow); }
+  .model .spark .b.bad  { background: var(--very-slow); }
   .model .spark .b.down { background: var(--down); }
 
   /* ─── Probe chart ─────────────────────────────────────────── */
@@ -351,8 +353,8 @@
     display: inline-block;
   }
   .probe-head .legend .ok i { background: var(--ok); }
-  .probe-head .legend .warn i { background: var(--warn); }
-  .probe-head .legend .bad i { background: var(--bad); }
+  .probe-head .legend .warn i { background: var(--slow); }
+  .probe-head .legend .bad i { background: var(--very-slow); }
   .probe-head .legend .down i { background: var(--down); }
 
   .probe-chart {
@@ -370,8 +372,8 @@
     transition: opacity .2s ease, transform .2s ease;
   }
   .probe-chart .p.ok   { background: var(--ok); }
-  .probe-chart .p.warn { background: var(--warn); }
-  .probe-chart .p.bad  { background: var(--bad); }
+  .probe-chart .p.warn { background: var(--slow); }
+  .probe-chart .p.bad  { background: var(--very-slow); }
   .probe-chart .p.down { background: var(--down); }
   .probe-chart .p:hover { opacity: 1; transform: translateY(-2px); }
   .probe-chart .p:hover::after {
