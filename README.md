@@ -1,12 +1,12 @@
 # freemodel.dev status
 
-Live status, latency, and visitor analytics for the freemodel.dev LLM gateway.
+Live status and latency for the freemodel.dev LLM gateway, with lightweight unique visitor stats.
 
-* **Polling**: 30 min if the last probe was 2xx, otherwise every minute until a 2xx is observed.
+* **Polling**: probes run once on server start, then every 30 min if the last probe was 2xx, otherwise every minute until a 2xx is observed.
 * **Targets**: `https://cc.freemodel.dev` and `https://api-cc.freemodel.dev` (Anthropic-compatible).
 * **Models**: discovered dynamically from `GET /v1/models` on each target; configurable test set via `TEST_MODELS`.
 * **Storage**: PostgreSQL (auto-creates tables on boot).
-* **Visitor analytics**: every page hit sets a `fm_vid` cookie and logs to `visits` + `sessions`. Top countries, daily trends, and active-now are surfaced.
+* **Visitor stats**: tracked as unique visitors using a one-way hash of IP + User-Agent. Reloading the page updates activity but does not create another visit.
 
 ## Run locally
 
@@ -43,7 +43,7 @@ DATABASE_URL=postgres://fm:fm@localhost:5432/freemodel_status
 |---|---|
 | `GET /` | Status page |
 | `GET /api/status` | JSON snapshot (target × model history, percentiles, uptime) |
-| `GET /api/stats` | Visitor stats: today, active now, 30-day daily series, top countries |
+| `GET /api/stats` | Unique visitor stats: today, active now, 30-day daily series, top countries |
 | `GET /api/visits/recent?limit=50` | Recent visit log |
 | `GET /api/health` | Liveness probe (checks DB connectivity) |
 | `GET /api/config` | Public-safe runtime config |
@@ -72,14 +72,14 @@ Auto-created on boot:
 |---|---|
 | `models` | Per-target registry of discovered models. Tracks `enabled`, `removed_at`. |
 | `probes` | Every probe result. Indexed on `(target, model, ts DESC)`. |
-| `visits` | One row per page hit (visitor_id, path, referrer, ua, country, ts). |
-| `sessions` | One row per visitor; `last_seen` heartbeat drives "active now". |
+| `visits` | One row per unique visitor fingerprint (visitor_id, first path/referrer/ua/country, ts). |
+| `sessions` | One row per unique visitor; `last_seen` heartbeat drives "active now". |
 
 ## Privacy
 
-* `fm_vid` is `HttpOnly` (JS can't read it) and `SameSite=Lax`.
-* The cookie lives for one year but is purely a session-correlation ID — no PII.
-* No third-party analytics or fingerprinting.
+* Visitor IDs are one-way SHA-256 hashes derived from IP + User-Agent; raw IPs are not stored.
+* The old `fm_vid` cookie is expired on tracked page requests and is no longer used for visitor identity.
+* No third-party analytics.
 
 ## Adding more endpoints later
 

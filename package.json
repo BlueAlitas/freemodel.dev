@@ -3,7 +3,7 @@
   "version": "0.2.0",
   "private": true,
   "type": "module",
-  "description": "Status page + poller + visitor analytics for the freemodel.dev LLM gateway.",
+  "description": "Status page + poller + unique visitor stats for the freemodel.dev LLM gateway.",
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js"

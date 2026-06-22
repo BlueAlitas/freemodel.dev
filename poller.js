@@ -32,6 +32,10 @@ const CONFIG = {
   probeTimeoutMs:  envInt("PROBE_TIMEOUT_MS", 15000),
 };
 
+function shouldProbeModel(id) {
+  return CONFIG.testModels.includes("*") || CONFIG.testModels.includes(id);
+}
+
 /* ---------- in-memory cache ---------- */
 // target -> modelId -> { last, history48 (just the most recent 48) }
 const cache = new Map();
@@ -89,19 +93,20 @@ async function reconcileModels(target, ids) {
 
   // Add new
   for (const id of incoming) {
+    const enabled = shouldProbeModel(id);
     if (!known.has(id)) {
       await query(
         `INSERT INTO models (target, id, enabled) VALUES ($1, $2, $3)
          ON CONFLICT (target, id) DO NOTHING`,
-        [target, id, CONFIG.testModels.includes(id)]
+        [target, id, enabled]
       );
       ensureTarget(target).set(id, { last: null, history48: [] });
       console.log(`[poller]   + model added: ${id}`);
-    } else if (known.get(id).removed_at) {
-      // Came back from the dead — clear removed_at
+    } else if (known.get(id).removed_at || known.get(id).enabled !== enabled) {
+      // Came back from the dead, or TEST_MODELS changed.
       await query(
-        `UPDATE models SET removed_at = NULL WHERE target = $1 AND id = $2`,
-        [target, id]
+        `UPDATE models SET removed_at = NULL, enabled = $3 WHERE target = $1 AND id = $2`,
+        [target, id, enabled]
       );
     }
   }
@@ -295,7 +300,7 @@ function nextDelay() {
     }
   }
   const base = latest || Date.now();
-  const interval = latestOk ? CONFIG.intervalHealthy : CONFIG.intervalRetry;
+  const interval = !latest || !latestOk ? CONFIG.intervalRetry : CONFIG.intervalHealthy;
   return Math.max(500, (base + interval) - Date.now());
 }
 
@@ -313,6 +318,15 @@ async function scheduleLoop() {
   }
 }
 
+async function runInitialCycleThenSchedule() {
+  try {
+    await runCycle();
+  } catch (e) {
+    console.error("[poller] initial cycle error:", e);
+  }
+  if (!stopped) scheduleLoop();
+}
+
 /* ---------- public surface ---------- */
 export const bus = new EventEmitter();
 let stopped = false;
@@ -324,8 +338,7 @@ export async function start() {
     const ids = await discoverModels(target);
     if (ids) await reconcileModels(target, ids);
   }
-  bus.emit("cycle");
-  scheduleLoop();
+  runInitialCycleThenSchedule();
 }
 
 export function stop() { stopped = true; }
