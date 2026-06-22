@@ -286,7 +286,7 @@ async function buildStatusPayload() {
   }
   const okProbeStreak = snap.okProbeStreak ?? 0;
   const healthyConfirmationRequests = snap.healthyConfirmationRequests ?? config.healthyConfirmationRequests ?? 50;
-  const confirmingHealthy = !!latest && latestOk && okProbeStreak < healthyConfirmationRequests;
+  const confirmingHealthy = overall === "ok" && !!latest && latestOk && okProbeStreak < healthyConfirmationRequests;
   const interval = !latest || !latestOk || confirmingHealthy ? config.intervalRetry : config.intervalHealthy;
   const nextAt = latest ? latest + interval : Date.now() + interval;
   const mode = confirmingHealthy ? "confirming" : latest && latestOk ? "healthy" : "rapid";

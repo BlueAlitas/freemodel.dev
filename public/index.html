@@ -130,6 +130,8 @@
 
   .status-sub { margin-top: 8px; color: var(--ink-soft); font-size: 14px; }
   .status-sub .muted { color: var(--ink-muted); }
+  .status-sub.confirming { color: var(--warn); }
+  .status-sub.confirming .muted { color: var(--warn); opacity: 0.86; }
 
   .latency-block { display: flex; flex-direction: column; justify-content: center; }
   .latency-big {
@@ -623,18 +625,24 @@ function ledClass(m) {
 }
 
 function render(data) {
+  const displayOverall = data.mode === "confirming" ? "ok" : data.overall;
   // Brand dot
-  const dotCls = data.overall === "ok" ? "ok"
-               : data.overall === "warn" ? "warn"
-               : data.overall === "down" ? "down"
+  const dotCls = displayOverall === "ok" ? "ok"
+               : displayOverall === "warn" ? "warn"
+               : displayOverall === "down" ? "down"
                : "";
   $("brandDot").className = "dot " + dotCls;
 
   // Hero
-  $("statusWord").textContent = STATUS_WORD[data.overall] || "…";
-  $("statusWord").className = "status-word " + (data.overall === "unknown" ? "unknown" : data.overall);
+  $("statusWord").textContent = STATUS_WORD[displayOverall] || "…";
+  $("statusWord").className = "status-word " + (displayOverall === "unknown" ? "unknown" : displayOverall);
 
-  if (data.lastOkOverall) {
+  if (data.mode === "confirming") {
+    const remaining = data.healthyConfirmationRemaining ?? 0;
+    $("statusSub").className = "status-sub confirming";
+    $("statusSub").innerHTML = `Operational. <span class="muted">Confirming stability with ${remaining} more successful probe requests before returning to normal cadence.</span>`;
+  } else if (data.lastOkOverall) {
+    $("statusSub").className = "status-sub";
     const prefix = data.overall === "ok"
       ? "All tested models are responding."
       : data.overall === "warn"
@@ -642,6 +650,7 @@ function render(data) {
         : "Tested models are failing.";
     $("statusSub").innerHTML = `${prefix} <span class="muted">Last successful check ${fmtRel(data.lastOkOverall)}.</span>`;
   } else {
+    $("statusSub").className = "status-sub";
     $("statusSub").innerHTML = `<span class="muted">${
         data.overall === "down" ? "No endpoint is responding. Retrying every minute…" :
         data.overall === "warn" ? "Some endpoints are failing. Investigating…" :
