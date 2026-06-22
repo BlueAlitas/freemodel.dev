@@ -88,8 +88,10 @@ CREATE TABLE IF NOT EXISTS visits (
 );
 CREATE INDEX IF NOT EXISTS visits_visitor_idx ON visits (visitor_id);
 CREATE INDEX IF NOT EXISTS visits_ts_idx      ON visits (ts DESC);
-CREATE INDEX IF NOT EXISTS visits_day_idx
-  ON visits ((date_trunc('day', ts)));
+-- Daily aggregations: rely on visits_ts_idx (a 30-day scan is small) rather
+-- than a per-day functional index, because timestamptz->date casts in index
+-- expressions are timezone-dependent (STABLE, not IMMUTABLE) and Postgres
+-- rejects them. Same end result; cheaper to maintain.
 
 CREATE TABLE IF NOT EXISTS sessions (
   visitor_id TEXT        PRIMARY KEY,

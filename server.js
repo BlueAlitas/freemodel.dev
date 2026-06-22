@@ -154,37 +154,32 @@ const STATUS_LABEL = {
 };
 
 /**
- * Run a SQL percentile agg over a window for a single (target, model).
- * Returns { p10, p50, p90, p99, uptime1h, uptime24, samples1h, samples24, history48 }.
+ * Percentiles (last hour) + uptime (last 24h) for a (target, model).
+ * Computed as two cheap aggregations that can both use the existing
+ * (target, model, ts DESC) index.
  */
 async function modelStats(target, modelId) {
   const sql = `
-    WITH windowed AS (
-      SELECT ok, status, latency_ms,
-             EXTRACT(EPOCH FROM ts) * 1000 AS ts_ms
+    WITH h1 AS (
+      SELECT ok, latency_ms FROM probes
+      WHERE target = $1 AND model = $2
+        AND ts > now() - interval '1 hour'
+    ),
+    d24 AS (
+      SELECT count(*) FILTER (WHERE ok)::float8 AS ok_n,
+             count(*)::float8                   AS total_n
       FROM probes
       WHERE target = $1 AND model = $2
         AND ts > now() - interval '24 hours'
-    ),
-    pct AS (
-      SELECT
-        percentile_cont(0.10) WITHIN GROUP (ORDER BY latency_ms) AS p10,
-        percentile_cont(0.50) WITHIN GROUP (ORDER BY latency_ms) AS p50,
-        percentile_cont(0.90) WITHIN GROUP (ORDER BY latency_ms) AS p90,
-        percentile_cont(0.99) WITHIN GROUP (ORDER BY latency_ms) AS p99,
-        count(*) FILTER (WHERE EXTRACT(EPOCH FROM ts_ms/1000) > EXTRACT(EPOCH FROM now() - interval '1 hour')) AS n1h,
-        count(*) FILTER (WHERE ok) AS n_ok_24,
-        count(*) AS n_24
-      FROM windowed
     )
     SELECT
-      (SELECT p10 FROM pct)::float8 AS p10,
-      (SELECT p50 FROM pct)::float8 AS p50,
-      (SELECT p90 FROM pct)::float8 AS p90,
-      (SELECT p99 FROM pct)::float8 AS p99,
-      (SELECT n1h FROM pct)::int      AS samples_1h,
-      (SELECT n_ok_24 FROM pct)::int AS ok_24,
-      (SELECT n_24 FROM pct)::int    AS n_24
+      (SELECT percentile_cont(0.10) WITHIN GROUP (ORDER BY latency_ms)::float8 FROM h1) AS p10,
+      (SELECT percentile_cont(0.50) WITHIN GROUP (ORDER BY latency_ms)::float8 FROM h1) AS p50,
+      (SELECT percentile_cont(0.90) WITHIN GROUP (ORDER BY latency_ms)::float8 FROM h1) AS p90,
+      (SELECT percentile_cont(0.99) WITHIN GROUP (ORDER BY latency_ms)::float8 FROM h1) AS p99,
+      (SELECT count(*)::int FROM h1) AS samples_1h,
+      (SELECT ok_n FROM d24)         AS ok_n,
+      (SELECT total_n FROM d24)      AS total_n
   `;
   const { rows } = await query(sql, [target, modelId]);
   const r = rows[0] || {};
@@ -194,7 +189,7 @@ async function modelStats(target, modelId) {
     p90: fmtMs(r.p90),
     p99: fmtMs(r.p99),
     samples1h: r.samples_1h ?? 0,
-    uptime24: r.n_24 ? r.ok_24 / r.n_24 : null,
+    uptime24: r.total_n ? r.ok_n / r.total_n : null,
   };
 }
 
