@@ -190,6 +190,7 @@ function rawBodyFromRequest(req) {
   if (Buffer.isBuffer(req.body)) return req.body;
   if (req.body == null) return Buffer.alloc(0);
   if (typeof req.body === "string") return Buffer.from(req.body);
+  if (typeof req.body === "object") return Buffer.alloc(0);
   return Buffer.from(req.body);
 }
 

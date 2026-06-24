@@ -191,6 +191,46 @@ test("direct proxy hides T2 failures, retries 10 times, then streams T0 success"
   }
 });
 
+test("direct proxy supports bodyless GET model discovery", async () => {
+  const t2 = await createUpstream((_req, res) => {
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify({ data: [{ id: "claude-haiku-4-5-20251001" }] }));
+  });
+  const t0 = await createUpstream((_req, res) => {
+    res.writeHead(500);
+    res.end();
+  });
+  const store = createMemoryStore();
+  const proxy = await createProxyServer({
+    store,
+    config: {
+      targets: { T2: t2.url, T0: t0.url },
+      retriesPerCredential: 10,
+      failureBodyDrainBytes: 1024,
+    },
+  });
+
+  try {
+    const res = await fetch(`${proxy.url}/v1/models`, {
+      method: "GET",
+      headers: { accept: "application/json" },
+    });
+    const body = await res.json();
+
+    assert.equal(res.status, 200);
+    assert.deepEqual(body, { data: [{ id: "claude-haiku-4-5-20251001" }] });
+    assert.equal(t2.requests.length, 1);
+    assert.equal(t2.requests[0].method, "GET");
+    assert.equal(t2.requests[0].body, "");
+    assert.equal(t0.requests.length, 0);
+    assert.equal(store.state.completed[0].ok, true);
+  } finally {
+    await close(proxy.server);
+    await close(t2.server);
+    await close(t0.server);
+  }
+});
+
 test("internal account proxy rotates upstream keys by priority", async () => {
   const seenAuth = [];
   const t2 = await createUpstream((_req, res, record) => {
