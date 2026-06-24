@@ -58,6 +58,7 @@ DATABASE_URL=postgres://fm:fm@localhost:5432/freemodel_status
 | `ANY /v1/*` | Anthropic-compatible reverse proxy |
 | `ANY /proxy/v1/*` | Same proxy with `/proxy` stripped before upstream forwarding |
 | `GET /api/status` | JSON snapshot (target × model history, percentiles, uptime) |
+| `GET /api/success-rates` | Public 24h proxy-final vs direct-upstream success-rate comparison |
 | `GET /api/stats` | Unique visitor stats: today, active now, 30-day daily series, top countries |
 | `GET /api/visits/recent?limit=50` | Recent visit log; requires `ADMIN_TOKEN` |
 | `GET /api/health` | Liveness probe (checks DB connectivity) |
