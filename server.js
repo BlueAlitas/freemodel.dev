@@ -12,7 +12,6 @@
  *    GET  /api/status             full snapshot
  *    GET  /api/health             liveness
  *    GET  /api/config             public config
- *    GET  /api/success-rates      proxy final success vs direct upstream probes
  *    GET  /api/stats              unique visitor stats (today, active, 30d)
  *    GET  /api/visits/recent      recent visit log (admin token)
  *    ...  /api/accounts/*         generated accounts + upstream keys
@@ -152,7 +151,6 @@ app.use(express.static(join(__dirname, "public"), {
 /* ---------- helpers ---------- */
 const pct = (n) => (n == null ? null : +(n * 100).toFixed(2));
 const fmtMs = (n) => (n == null ? null : Math.round(n));
-const successPct = (ok, total) => total ? +((ok / total) * 100).toFixed(2) : null;
 const STATUS_LABEL = {
   ok: "Operational",
   warn: "Degraded",
@@ -338,159 +336,6 @@ async function buildStatusPayload() {
   };
 }
 
-function targetByHost(hostname, fallback) {
-  const cfg = poller.getConfig();
-  const configured = cfg.targets.find((target) => {
-    try { return new URL(target).hostname === hostname; } catch { return false; }
-  });
-  return configured || fallback;
-}
-
-function rateSummary(source, label, row, target = null) {
-  const total = row?.total ?? 0;
-  const ok = row?.ok ?? 0;
-  const failed = row?.failed ?? Math.max(0, total - ok);
-  return {
-    source,
-    label,
-    target,
-    total,
-    ok,
-    failed,
-    successRate: successPct(ok, total),
-    avgLatencyMs: row?.avg_latency_ms == null ? null : Math.round(Number(row.avg_latency_ms)),
-  };
-}
-
-async function buildSuccessRatesPayload() {
-  const t2Target = targetByHost("api-cc.freemodel.dev", process.env.PROXY_T2_URL || "https://api-cc.freemodel.dev");
-  const t0Target = targetByHost("cc.freemodel.dev", process.env.PROXY_T0_URL || "https://cc.freemodel.dev");
-
-  const { rows: summaryRows } = await query(`
-    WITH events AS (
-      SELECT 'proxy'::text AS source, ok, latency_ms, completed_at AS ts
-      FROM proxy_requests
-      WHERE completed_at IS NOT NULL
-        AND completed_at > now() - interval '24 hours'
-      UNION ALL
-      SELECT
-        CASE
-          WHEN target = $1 THEN 'official_t2'
-          WHEN target = $2 THEN 'official_t0'
-        END AS source,
-        ok,
-        latency_ms,
-        ts
-      FROM probes
-      WHERE target IN ($1, $2)
-        AND ts > now() - interval '24 hours'
-    )
-    SELECT source,
-           count(*)::int AS total,
-           count(*) FILTER (WHERE ok)::int AS ok,
-           count(*) FILTER (WHERE NOT ok)::int AS failed,
-           avg(latency_ms)::float8 AS avg_latency_ms
-    FROM events
-    WHERE source IS NOT NULL
-    GROUP BY source
-  `, [t2Target, t0Target]);
-
-  const summaryBySource = new Map(summaryRows.map(row => [row.source, row]));
-
-  const { rows: bucketRows } = await query(`
-    WITH bucket_series AS (
-      SELECT generate_series(
-        date_trunc('hour', now() - interval '23 hours'),
-        date_trunc('hour', now()),
-        interval '1 hour'
-      ) AS bucket
-    ),
-    events AS (
-      SELECT 'proxy'::text AS source, ok, latency_ms, completed_at AS ts
-      FROM proxy_requests
-      WHERE completed_at IS NOT NULL
-        AND completed_at > now() - interval '24 hours'
-      UNION ALL
-      SELECT
-        CASE
-          WHEN target = $1 THEN 'official_t2'
-          WHEN target = $2 THEN 'official_t0'
-        END AS source,
-        ok,
-        latency_ms,
-        ts
-      FROM probes
-      WHERE target IN ($1, $2)
-        AND ts > now() - interval '24 hours'
-    ),
-    agg AS (
-      SELECT date_trunc('hour', ts) AS bucket,
-             source,
-             count(*)::int AS total,
-             count(*) FILTER (WHERE ok)::int AS ok,
-             avg(latency_ms)::float8 AS avg_latency_ms
-      FROM events
-      WHERE source IS NOT NULL
-      GROUP BY 1, 2
-    )
-    SELECT EXTRACT(EPOCH FROM b.bucket) * 1000 AS bucket_ms,
-           a.source,
-           COALESCE(a.total, 0)::int AS total,
-           COALESCE(a.ok, 0)::int AS ok,
-           a.avg_latency_ms
-    FROM bucket_series b
-    LEFT JOIN agg a ON a.bucket = b.bucket
-    ORDER BY b.bucket ASC, a.source ASC
-  `, [t2Target, t0Target]);
-
-  const buckets = [];
-  const byBucket = new Map();
-  for (const row of bucketRows) {
-    const bucketMs = Number(row.bucket_ms);
-    if (!byBucket.has(bucketMs)) {
-      const item = {
-        ts: bucketMs,
-        proxy: null,
-        officialT2: null,
-        officialT0: null,
-      };
-      byBucket.set(bucketMs, item);
-      buckets.push(item);
-    }
-    if (!row.source) continue;
-    const total = row.total ?? 0;
-    const ok = row.ok ?? 0;
-    const point = {
-      total,
-      ok,
-      failed: Math.max(0, total - ok),
-      successRate: successPct(ok, total),
-      avgLatencyMs: row.avg_latency_ms == null ? null : Math.round(Number(row.avg_latency_ms)),
-    };
-    const item = byBucket.get(bucketMs);
-    if (row.source === "proxy") item.proxy = point;
-    if (row.source === "official_t2") item.officialT2 = point;
-    if (row.source === "official_t0") item.officialT0 = point;
-  }
-
-  for (const bucket of buckets) {
-    bucket.proxy ??= { total: 0, ok: 0, failed: 0, successRate: null, avgLatencyMs: null };
-    bucket.officialT2 ??= { total: 0, ok: 0, failed: 0, successRate: null, avgLatencyMs: null };
-    bucket.officialT0 ??= { total: 0, ok: 0, failed: 0, successRate: null, avgLatencyMs: null };
-  }
-
-  return {
-    windowHours: 24,
-    generatedAt: Date.now(),
-    summary: [
-      rateSummary("proxy", "fm proxy final", summaryBySource.get("proxy")),
-      rateSummary("official_t2", "official api-cc", summaryBySource.get("official_t2"), t2Target),
-      rateSummary("official_t0", "official cc", summaryBySource.get("official_t0"), t0Target),
-    ],
-    buckets,
-  };
-}
-
 /* ---------- API routes ---------- */
 app.get("/api/status", async (_req, res) => {
   try {
@@ -521,17 +366,6 @@ app.get("/api/config", (_req, res) => {
     testModels: c.testModels,
     targets: c.targets,
   });
-});
-
-app.get("/api/success-rates", async (_req, res) => {
-  try {
-    const payload = await buildSuccessRatesPayload();
-    res.set("cache-control", "no-store");
-    res.json(payload);
-  } catch (e) {
-    console.error("[api/success-rates] error:", e);
-    res.status(500).json({ error: e.message });
-  }
 });
 
 app.get("/api/stats", async (_req, res) => {

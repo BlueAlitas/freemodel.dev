@@ -58,13 +58,13 @@ DATABASE_URL=postgres://fm:fm@localhost:5432/freemodel_status
 | `ANY /v1/*` | Anthropic-compatible reverse proxy |
 | `ANY /proxy/v1/*` | Same proxy with `/proxy` stripped before upstream forwarding |
 | `GET /api/status` | JSON snapshot (target × model history, percentiles, uptime) |
-| `GET /api/success-rates` | Public 24h proxy-final vs direct-upstream success-rate comparison |
 | `GET /api/stats` | Unique visitor stats: today, active now, 30-day daily series, top countries |
 | `GET /api/visits/recent?limit=50` | Recent visit log; requires `ADMIN_TOKEN` |
 | `GET /api/health` | Liveness probe (checks DB connectivity) |
 | `GET /api/config` | Public-safe runtime config |
 | `POST /api/accounts` | Create generated account and one-time internal API key |
 | `GET /api/accounts/:id` | Load account metadata and stored upstream-key list |
+| `GET /api/accounts/:id/usage` | Account-scoped 24h proxy usage success rate, hourly buckets, breakdowns, and official probe baseline |
 | `DELETE /api/accounts/:id` | Delete account and stored upstream keys |
 | `POST /api/accounts/:id/api-key` | Rotate internal API key |
 | `POST /api/accounts/:id/keys` | Add upstream freemodel.dev key with `tier`, `priority`, `label` |

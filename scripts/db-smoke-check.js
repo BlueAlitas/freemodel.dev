@@ -56,6 +56,7 @@ async function main() {
   const baseUrl = await listen(server);
 
   let accountId = null;
+  let smokeRequestId = null;
   try {
     const created = await request(baseUrl, "/api/accounts", {
       method: "POST",
@@ -85,6 +86,24 @@ async function main() {
       throw new Error("upstream key update failed");
     }
 
+    smokeRequestId = `smoke_${Date.now()}`;
+    await query(`
+      INSERT INTO proxy_requests
+        (id, account_id, method, route_path, request_model, ok, final_status,
+         latency_ms, attempts, upstream_tier, upstream_url, streamed, completed_at)
+      VALUES ($1, $2, 'POST', '/v1/messages', 'claude-haiku-4-5-20251001',
+              true, 200, 123.4, 1, 'T2', 'https://api-cc.freemodel.dev/v1/messages',
+              true, now())
+    `, [smokeRequestId, accountId]);
+
+    const usage = await request(baseUrl, `/api/accounts/${encodeURIComponent(accountId)}/usage`);
+    if (usage.summary.total < 1 || usage.summary.ok < 1 || usage.summary.successRate == null) {
+      throw new Error("account usage success rate failed");
+    }
+    if (!usage.official?.t2?.target || !usage.official?.t0?.target) {
+      throw new Error("account usage official baseline missing");
+    }
+
     const rotated = await request(baseUrl, `/api/accounts/${encodeURIComponent(accountId)}/api-key`, {
       method: "POST",
       body: "{}",
@@ -112,6 +131,9 @@ async function main() {
 
     console.log(JSON.stringify({ dbSmoke: true, accountRoutes: true, adminRoutes: true }));
   } finally {
+    if (smokeRequestId) {
+      await query(`DELETE FROM proxy_requests WHERE id = $1`, [smokeRequestId]).catch(() => {});
+    }
     if (accountId) {
       await query(`DELETE FROM accounts WHERE id = $1`, [accountId]).catch(() => {});
     }

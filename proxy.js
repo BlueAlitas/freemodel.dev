@@ -743,6 +743,166 @@ function proxyRequestRow(row) {
   };
 }
 
+function successRate(ok, total) {
+  return total ? +((ok / total) * 100).toFixed(2) : null;
+}
+
+function usageSummaryRow(row) {
+  const total = row?.total ?? 0;
+  const ok = row?.ok ?? 0;
+  return {
+    total,
+    ok,
+    failed: row?.failed ?? Math.max(0, total - ok),
+    successRate: successRate(ok, total),
+    avgLatencyMs: row?.avg_latency_ms == null ? null : Math.round(Number(row.avg_latency_ms)),
+  };
+}
+
+async function accountUsagePayload(accountId, query, config = getProxyConfig()) {
+  const { rows: accountRows } = await query(
+    `SELECT id FROM accounts WHERE id = $1`,
+    [accountId]
+  );
+  if (!accountRows.length) return null;
+
+  const officialT2Target = config.targets?.T2 || "https://api-cc.freemodel.dev";
+  const officialT0Target = config.targets?.T0 || "https://cc.freemodel.dev";
+
+  const { rows: summaryRows } = await query(`
+    SELECT count(*)::int AS total,
+           count(*) FILTER (WHERE ok = true)::int AS ok,
+           count(*) FILTER (WHERE ok = false)::int AS failed,
+           avg(latency_ms)::float8 AS avg_latency_ms,
+           avg(attempts)::float8 AS avg_attempts,
+           max(completed_at) AS last_completed_at
+    FROM proxy_requests
+    WHERE account_id = $1
+      AND completed_at IS NOT NULL
+      AND completed_at > now() - interval '24 hours'
+  `, [accountId]);
+  const summary = summaryRows[0] || {};
+  const total = summary.total ?? 0;
+  const ok = summary.ok ?? 0;
+  const failed = summary.failed ?? Math.max(0, total - ok);
+
+  const { rows: byStatusRows } = await query(`
+    SELECT COALESCE(final_status, 0)::int AS status,
+           count(*)::int AS total,
+           count(*) FILTER (WHERE ok = true)::int AS ok
+    FROM proxy_requests
+    WHERE account_id = $1
+      AND completed_at IS NOT NULL
+      AND completed_at > now() - interval '24 hours'
+    GROUP BY 1
+    ORDER BY total DESC, status ASC
+    LIMIT 8
+  `, [accountId]);
+
+  const { rows: byModelRows } = await query(`
+    SELECT COALESCE(request_model, 'unknown') AS model,
+           count(*)::int AS total,
+           count(*) FILTER (WHERE ok = true)::int AS ok,
+           avg(latency_ms)::float8 AS avg_latency_ms
+    FROM proxy_requests
+    WHERE account_id = $1
+      AND completed_at IS NOT NULL
+      AND completed_at > now() - interval '24 hours'
+    GROUP BY 1
+    ORDER BY total DESC, model ASC
+    LIMIT 8
+  `, [accountId]);
+
+  const { rows: bucketRows } = await query(`
+    WITH bucket_series AS (
+      SELECT generate_series(
+        date_trunc('hour', now() - interval '23 hours'),
+        date_trunc('hour', now()),
+        interval '1 hour'
+      ) AS bucket
+    ),
+    agg AS (
+      SELECT date_trunc('hour', completed_at) AS bucket,
+             count(*)::int AS total,
+             count(*) FILTER (WHERE ok = true)::int AS ok,
+             count(*) FILTER (WHERE ok = false)::int AS failed,
+             avg(latency_ms)::float8 AS avg_latency_ms
+      FROM proxy_requests
+      WHERE account_id = $1
+        AND completed_at IS NOT NULL
+        AND completed_at > now() - interval '24 hours'
+      GROUP BY 1
+    )
+    SELECT EXTRACT(EPOCH FROM b.bucket) * 1000 AS bucket_ms,
+           COALESCE(a.total, 0)::int AS total,
+           COALESCE(a.ok, 0)::int AS ok,
+           COALESCE(a.failed, 0)::int AS failed,
+           a.avg_latency_ms
+    FROM bucket_series b
+    LEFT JOIN agg a ON a.bucket = b.bucket
+    ORDER BY b.bucket ASC
+  `, [accountId]);
+
+  const { rows: officialRows } = await query(`
+    SELECT target,
+           count(*)::int AS total,
+           count(*) FILTER (WHERE ok = true)::int AS ok,
+           count(*) FILTER (WHERE ok = false)::int AS failed,
+           avg(latency_ms)::float8 AS avg_latency_ms
+    FROM probes
+    WHERE target IN ($1, $2)
+      AND ts > now() - interval '24 hours'
+    GROUP BY target
+  `, [officialT2Target, officialT0Target]);
+  const officialByTarget = new Map(officialRows.map((row) => [row.target, row]));
+
+  return {
+    accountId,
+    windowHours: 24,
+    generatedAt: Date.now(),
+    summary: {
+      total,
+      ok,
+      failed,
+      successRate: successRate(ok, total),
+      avgLatencyMs: summary.avg_latency_ms == null ? null : Math.round(Number(summary.avg_latency_ms)),
+      avgAttempts: summary.avg_attempts == null ? null : +Number(summary.avg_attempts).toFixed(2),
+      lastCompletedAt: summary.last_completed_at,
+    },
+    official: {
+      t2: { target: officialT2Target, ...usageSummaryRow(officialByTarget.get(officialT2Target)) },
+      t0: { target: officialT0Target, ...usageSummaryRow(officialByTarget.get(officialT0Target)) },
+    },
+    byStatus: byStatusRows.map((row) => ({
+      status: row.status,
+      total: row.total,
+      ok: row.ok,
+      failed: Math.max(0, row.total - row.ok),
+      successRate: successRate(row.ok, row.total),
+    })),
+    byModel: byModelRows.map((row) => ({
+      model: row.model,
+      total: row.total,
+      ok: row.ok,
+      failed: Math.max(0, row.total - row.ok),
+      successRate: successRate(row.ok, row.total),
+      avgLatencyMs: row.avg_latency_ms == null ? null : Math.round(Number(row.avg_latency_ms)),
+    })),
+    buckets: bucketRows.map((row) => {
+      const total = row.total ?? 0;
+      const ok = row.ok ?? 0;
+      return {
+        ts: Number(row.bucket_ms),
+        total,
+        ok,
+        failed: row.failed ?? Math.max(0, total - ok),
+        successRate: successRate(ok, total),
+        avgLatencyMs: row.avg_latency_ms == null ? null : Math.round(Number(row.avg_latency_ms)),
+      };
+    }),
+  };
+}
+
 export function registerAccountAndAdminRoutes(app, { query, config = getProxyConfig() } = {}) {
   if (typeof query !== "function") throw new Error("query function is required");
   const admin = requireAdmin(config);
@@ -773,6 +933,21 @@ export function registerAccountAndAdminRoutes(app, { query, config = getProxyCon
       res.json({ account });
     } catch (err) {
       res.status(500).json({ error: "account_load_failed" });
+    }
+  });
+
+  app.get("/api/accounts/:accountId/usage", async (req, res) => {
+    try {
+      const payload = await accountUsagePayload(req.params.accountId, query, config);
+      if (!payload) {
+        res.status(404).json({ error: "account_not_found" });
+        return;
+      }
+      res.set("cache-control", "no-store");
+      res.json(payload);
+    } catch (err) {
+      console.error("[accounts] usage load failed:", err);
+      res.status(500).json({ error: "account_usage_load_failed" });
     }
   });
 

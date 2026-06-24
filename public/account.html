@@ -112,6 +112,7 @@
   }
   .tile span { display: block; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .07em; }
   .tile b { display: block; margin-top: 4px; overflow-wrap: anywhere; font-weight: 500; }
+  .wide { grid-column: 1 / -1; }
   .key-form {
     display: grid;
     grid-template-columns: 1.2fr 1.8fr .7fr .7fr auto;
@@ -120,6 +121,103 @@
     margin-bottom: 14px;
   }
   @media (max-width: 900px) { .key-form { grid-template-columns: 1fr; } }
+  .usage-tiles {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+    margin: 10px 0 14px;
+  }
+  @media (max-width: 760px) { .usage-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .usage-tile {
+    background: var(--panel-2);
+    border: 1px solid #252525;
+    border-radius: 8px;
+    padding: 10px;
+  }
+  .usage-tile span { display: block; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .07em; }
+  .usage-tile b { display: block; margin-top: 4px; font-size: 22px; line-height: 1.1; font-variant-numeric: tabular-nums; }
+  .usage-chart-wrap { overflow-x: auto; }
+  .usage-chart {
+    display: flex;
+    align-items: flex-end;
+    gap: 4px;
+    height: 126px;
+    min-width: 680px;
+    padding-top: 10px;
+    border-bottom: 1px solid var(--line);
+  }
+  .usage-bar {
+    flex: 1 1 0;
+    min-width: 8px;
+    min-height: 2px;
+    border-radius: 3px 3px 0 0;
+    background: var(--ok);
+    opacity: .84;
+    position: relative;
+    transition: opacity .2s ease, transform .2s ease;
+  }
+  .usage-bar.warn { background: var(--warn); }
+  .usage-bar.bad { background: var(--bad); }
+  .usage-bar.empty { background: var(--line); opacity: .65; height: 2px !important; }
+  .usage-bar:hover { opacity: 1; transform: translateY(-2px); }
+  .usage-bar:hover::after {
+    content: attr(data-tip);
+    position: absolute;
+    bottom: calc(100% + 6px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--bg);
+    color: var(--ink);
+    border: 1px solid var(--line);
+    padding: 6px 8px;
+    border-radius: 6px;
+    font-size: 11px;
+    white-space: nowrap;
+    pointer-events: none;
+    z-index: 5;
+    font-variant-numeric: tabular-nums;
+  }
+  .usage-axis {
+    display: flex;
+    justify-content: space-between;
+    min-width: 680px;
+    color: var(--muted);
+    font-size: 11px;
+    margin-top: 6px;
+  }
+  .usage-breakdowns {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+    margin-top: 16px;
+  }
+  @media (max-width: 760px) { .usage-breakdowns { grid-template-columns: 1fr; } }
+  .usage-breakdowns h3 {
+    margin: 0 0 8px;
+    color: var(--muted);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: .07em;
+    font-weight: 500;
+  }
+  .usage-mini { display: grid; gap: 7px; }
+  .usage-mini-row {
+    display: grid;
+    grid-template-columns: minmax(120px, 1fr) 2fr 76px;
+    gap: 8px;
+    align-items: center;
+    color: var(--soft);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+  }
+  .usage-mini-track {
+    height: 8px;
+    border: 1px solid #252525;
+    border-radius: 999px;
+    background: #111;
+    overflow: hidden;
+  }
+  .usage-mini-fill { height: 100%; background: var(--ok); min-width: 2px; }
   .empty { color: var(--muted); padding: 14px 8px; }
   .hidden { display: none !important; }
 </style>
@@ -188,6 +286,26 @@
       </form>
       <div id="keysTable"></div>
     </section>
+
+    <section id="usagePanel" class="panel wide hidden">
+      <h2>Your usage success</h2>
+      <div class="muted" id="usageSummary">Load an account to view usage.</div>
+      <div class="usage-tiles" id="usageTiles"></div>
+      <div class="usage-chart-wrap">
+        <div class="usage-chart" id="usageChart" role="img" aria-label="Hourly account success rate"></div>
+        <div class="usage-axis" id="usageAxis"></div>
+      </div>
+      <div class="usage-breakdowns">
+        <div>
+          <h3>By model</h3>
+          <div class="usage-mini" id="usageByModel"></div>
+        </div>
+        <div>
+          <h3>By status</h3>
+          <div class="usage-mini" id="usageByStatus"></div>
+        </div>
+      </div>
+    </section>
   </main>
 </div>
 
@@ -203,6 +321,14 @@ function showNotice(text, type = "ok") {
 
 function fmtDate(value) {
   return value ? new Date(value).toLocaleString() : "-";
+}
+
+function fmtMs(value) {
+  return value == null ? "—" : `${Math.round(value).toLocaleString()} ms`;
+}
+
+function fmtPct(value) {
+  return value == null ? "—" : `${Number(value).toFixed(value === 100 || value === 0 ? 0 : 1)}%`;
 }
 
 async function api(path, options = {}) {
@@ -227,6 +353,7 @@ function renderAccount(account, generatedKey = "") {
   $("accountMeta").classList.remove("hidden");
   $("accountActions").classList.remove("hidden");
   $("keysPanel").classList.remove("hidden");
+  $("usagePanel").classList.remove("hidden");
 
   if (generatedKey) {
     $("generatedKey").value = generatedKey;
@@ -234,6 +361,9 @@ function renderAccount(account, generatedKey = "") {
   }
 
   renderKeys(account.keys || []);
+  loadUsage(account.id).catch((err) => {
+    $("usageSummary").textContent = `Failed to load usage: ${err.message}`;
+  });
 }
 
 function renderKeys(keys) {
@@ -291,6 +421,90 @@ function escapeAttr(value) {
   return escapeHtml(value).replace(/"/g, "&quot;");
 }
 
+function rateTone(rate) {
+  if (rate == null) return "empty";
+  if (rate < 80) return "bad";
+  if (rate < 95) return "warn";
+  return "";
+}
+
+async function loadUsage(accountId) {
+  const data = await api(`/api/accounts/${encodeURIComponent(accountId)}/usage`);
+  renderUsage(data);
+}
+
+function renderUsage(data) {
+  const s = data.summary || {};
+  const officialT2 = data.official?.t2 || {};
+  const total = s.total || 0;
+  const delta = s.successRate != null && officialT2.successRate != null
+    ? s.successRate - officialT2.successRate
+    : null;
+  const deltaText = delta == null ? "" : ` · ${delta >= 0 ? "+" : ""}${delta.toFixed(1)} pts vs official api-cc`;
+  $("usageSummary").textContent = total
+    ? `Last ${data.windowHours || 24}h · ${s.ok.toLocaleString()} / ${total.toLocaleString()} requests completed successfully${deltaText}${s.lastCompletedAt ? ` · latest ${fmtDate(s.lastCompletedAt)}` : ""}`
+    : `No proxy usage recorded for this account in the last ${data.windowHours || 24}h.`;
+
+  $("usageTiles").innerHTML = [
+    ["Your success", fmtPct(s.successRate), `${s.ok || 0} ok · ${s.failed || 0} failed`],
+    ["Official api-cc", fmtPct(officialT2.successRate), `${officialT2.ok || 0} / ${officialT2.total || 0} probes ok`],
+    ["Requests", (total || 0).toLocaleString(), "last 24h"],
+    ["Avg latency", fmtMs(s.avgLatencyMs), s.avgAttempts == null ? "completed requests" : `${s.avgAttempts} attempts avg`],
+  ].map(([label, value, sub]) => `
+    <div class="usage-tile">
+      <span>${escapeHtml(label)}</span>
+      <b>${escapeHtml(value)}</b>
+      <div class="muted">${escapeHtml(sub)}</div>
+    </div>
+  `).join("");
+
+  renderUsageChart(data.buckets || []);
+  renderMiniBars("usageByModel", data.byModel || [], "model");
+  renderMiniBars("usageByStatus", data.byStatus || [], "status");
+}
+
+function renderUsageChart(buckets) {
+  if (!buckets.length || buckets.every((bucket) => !bucket.total)) {
+    $("usageChart").innerHTML = `<div class="empty">No usage samples yet.</div>`;
+    $("usageAxis").innerHTML = "";
+    return;
+  }
+
+  $("usageChart").innerHTML = buckets.map((bucket) => {
+    const rate = bucket.successRate;
+    const height = rate == null ? 2 : Math.max(2, Math.round(rate));
+    const tip = `${fmtPct(rate)} · ${bucket.ok}/${bucket.total} ok · ${fmtMs(bucket.avgLatencyMs)} · ${new Date(bucket.ts).toLocaleTimeString([], { hour: "numeric" })}`;
+    return `<span class="usage-bar ${rateTone(rate)}" style="height:${height}%" data-tip="${escapeAttr(tip)}"></span>`;
+  }).join("");
+
+  const first = buckets[0]?.ts;
+  const mid = buckets[Math.floor(buckets.length / 2)]?.ts;
+  const last = buckets[buckets.length - 1]?.ts;
+  $("usageAxis").innerHTML = [first, mid, last]
+    .filter(Boolean)
+    .map((ts) => `<span>${new Date(ts).toLocaleTimeString([], { hour: "numeric" })}</span>`)
+    .join("");
+}
+
+function renderMiniBars(id, rows, labelKey) {
+  if (!rows.length) {
+    $(id).innerHTML = `<div class="empty">No data.</div>`;
+    return;
+  }
+  const max = Math.max(1, ...rows.map((row) => row.total || 0));
+  $(id).innerHTML = rows.map((row) => {
+    const label = labelKey === "status" ? `HTTP ${row.status || "network"}` : row.model;
+    const width = Math.max(2, Math.round(((row.total || 0) / max) * 100));
+    return `
+      <div class="usage-mini-row">
+        <span class="mono">${escapeHtml(label)}</span>
+        <span class="usage-mini-track"><span class="usage-mini-fill" style="width:${width}%"></span></span>
+        <span>${fmtPct(row.successRate)}</span>
+      </div>
+    `;
+  }).join("");
+}
+
 async function loadAccount(id = $("accountId").value.trim()) {
   if (!id) return;
   const body = await api(`/api/accounts/${encodeURIComponent(id)}`);
@@ -337,6 +551,7 @@ $("deleteAccount").addEventListener("click", async () => {
     $("accountMeta").classList.add("hidden");
     $("accountActions").classList.add("hidden");
     $("keysPanel").classList.add("hidden");
+    $("usagePanel").classList.add("hidden");
     $("generatedKeyWrap").classList.add("hidden");
     showNotice("Account deleted.");
   } catch (err) {

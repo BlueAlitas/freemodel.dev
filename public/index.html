@@ -401,132 +401,6 @@
     text-align: center;
   }
 
-  /* ─── Success comparison ─────────────────────────────────── */
-  .success-card {
-    background: var(--bg-card);
-    border: 1px solid var(--line);
-    border-radius: 12px;
-    padding: 16px 18px;
-    margin-bottom: 18px;
-  }
-  .success-tiles {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 8px;
-    margin: 12px 0 14px;
-  }
-  @media (max-width: 760px) { .success-tiles { grid-template-columns: 1fr; } }
-  .rate-tile {
-    background: var(--bg-warm);
-    border: 1px solid var(--line-soft);
-    border-radius: 8px;
-    padding: 11px 12px;
-    min-width: 0;
-  }
-  .rate-tile .label {
-    display: flex;
-    align-items: center;
-    gap: 7px;
-    color: var(--ink-muted);
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-  }
-  .rate-tile .label i {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    display: inline-block;
-    flex-shrink: 0;
-  }
-  .rate-tile.proxy .label i { background: var(--ok); }
-  .rate-tile.official-t2 .label i { background: var(--slow); }
-  .rate-tile.official-t0 .label i { background: var(--warn); }
-  .rate-tile .rate {
-    margin-top: 5px;
-    font-size: 27px;
-    font-weight: 600;
-    line-height: 1.1;
-    font-variant-numeric: tabular-nums;
-  }
-  .rate-tile .meta {
-    margin-top: 4px;
-    color: var(--ink-muted);
-    font-size: 12px;
-    overflow-wrap: anywhere;
-  }
-  .rate-chart-wrap {
-    overflow-x: auto;
-    padding-bottom: 2px;
-  }
-  .rate-chart {
-    display: flex;
-    align-items: flex-end;
-    gap: 5px;
-    height: 126px;
-    min-width: 680px;
-    padding: 10px 0 0;
-    border-bottom: 1px solid var(--line-soft);
-  }
-  .rate-group {
-    flex: 1 1 0;
-    min-width: 20px;
-    height: 100%;
-    display: grid;
-    grid-template-columns: repeat(3, minmax(3px, 1fr));
-    gap: 2px;
-    align-items: end;
-    position: relative;
-  }
-  .rate-bar {
-    min-height: 2px;
-    border-radius: 3px 3px 0 0;
-    opacity: 0.84;
-    position: relative;
-    transition: opacity .2s ease, transform .2s ease;
-  }
-  .rate-bar.proxy { background: var(--ok); }
-  .rate-bar.official-t2 { background: var(--slow); }
-  .rate-bar.official-t0 { background: var(--warn); }
-  .rate-bar.empty {
-    height: 2px !important;
-    background: var(--line);
-    opacity: 0.65;
-  }
-  .rate-bar:hover { opacity: 1; transform: translateY(-2px); }
-  .rate-bar:hover::after {
-    content: attr(data-tip);
-    position: absolute;
-    bottom: calc(100% + 6px);
-    left: 50%;
-    transform: translateX(-50%);
-    background: var(--bg);
-    color: var(--ink);
-    border: 1px solid var(--line);
-    padding: 6px 8px;
-    border-radius: 6px;
-    font-size: 11px;
-    white-space: nowrap;
-    pointer-events: none;
-    z-index: 5;
-    font-variant-numeric: tabular-nums;
-  }
-  .rate-axis {
-    display: flex;
-    justify-content: space-between;
-    color: var(--ink-muted);
-    font-size: 11px;
-    min-width: 680px;
-    margin-top: 6px;
-  }
-  .rate-chart .empty {
-    width: 100%;
-    align-self: center;
-    color: var(--ink-muted);
-    font-size: 13px;
-    text-align: center;
-  }
-
   /* ─── Visitor stat strip ──────────────────────────────────── */
   .visitor-strip {
     display: grid;
@@ -647,25 +521,6 @@
       <div class="probe-chart" id="probeChart" role="img" aria-label="Recent model probe status chart"></div>
     </div>
 
-    <div class="success-card">
-      <div class="probe-head">
-        <div>
-          <div class="h">Final success rate comparison</div>
-          <div class="sub" id="successSummary">Loading success-rate history.</div>
-        </div>
-        <div class="legend" aria-hidden="true">
-          <span class="ok"><i></i>proxy final</span>
-          <span class="warn"><i></i>official api-cc</span>
-          <span class="bad"><i></i>official cc</span>
-        </div>
-      </div>
-      <div class="success-tiles" id="successTiles"></div>
-      <div class="rate-chart-wrap">
-        <div class="rate-chart" id="successChart" role="img" aria-label="Hourly final success rate comparison"></div>
-        <div class="rate-axis" id="successAxis"></div>
-      </div>
-    </div>
-
     <div id="targets"></div>
 
     <section class="visitor-strip" id="stats" aria-label="Unique visitor stats">
@@ -702,8 +557,6 @@
         &nbsp;·&nbsp;
         <a href="https://fm.bluealitas.com/api/stats" class="mono">/api/stats</a>
         &nbsp;·&nbsp;
-        <a href="https://fm.bluealitas.com/api/success-rates" class="mono">/api/success-rates</a>
-        &nbsp;·&nbsp;
         <a href="https://fm.bluealitas.com/api/config" class="mono">/api/config</a>
       </div>
     </footer>
@@ -724,7 +577,6 @@ const STATUS_WORD = {
   unknown: "Awaiting probes…",
 };
 const fmtMs = (n) => n == null ? "—" : Math.round(n).toLocaleString();
-const fmtPct = (n) => n == null ? "—" : Number(n).toFixed(n === 100 || n === 0 ? 0 : 1) + "%";
 const fmtRel = (ts) => {
   if (!ts) return "—";
   const d = Math.max(0, Math.round((Date.now() - ts) / 1000));
@@ -963,86 +815,6 @@ function renderProbeChart(data) {
   }).join("");
 }
 
-function sourceClass(source) {
-  if (source === "proxy") return "proxy";
-  if (source === "official_t2") return "official-t2";
-  if (source === "official_t0") return "official-t0";
-  return "";
-}
-
-function pointForSource(bucket, source) {
-  if (source === "proxy") return bucket.proxy;
-  if (source === "official_t2") return bucket.officialT2;
-  if (source === "official_t0") return bucket.officialT0;
-  return null;
-}
-
-function renderSuccessRates(data) {
-  const sources = [
-    { id: "proxy", name: "proxy final" },
-    { id: "official_t2", name: "official api-cc" },
-    { id: "official_t0", name: "official cc" },
-  ];
-  const summary = new Map((data.summary || []).map(item => [item.source, item]));
-
-  $("successTiles").innerHTML = sources.map(source => {
-    const row = summary.get(source.id) || {};
-    const rate = fmtPct(row.successRate);
-    const avg = row.avgLatencyMs == null ? "avg —" : `avg ${fmtMs(row.avgLatencyMs)}ms`;
-    const total = row.total ?? 0;
-    const ok = row.ok ?? 0;
-    const label = row.label || source.name;
-    return `
-      <div class="rate-tile ${sourceClass(source.id)}">
-        <div class="label"><i></i>${esc(label)}</div>
-        <div class="rate">${rate}</div>
-        <div class="meta">${ok.toLocaleString()} / ${total.toLocaleString()} ok · ${avg}</div>
-      </div>`;
-  }).join("");
-
-  const buckets = data.buckets || [];
-  const totals = [...summary.values()].reduce((acc, row) => acc + (row.total || 0), 0);
-  if (!buckets.length || totals === 0) {
-    $("successSummary").textContent = "No success-rate samples in the last 24 hours.";
-    $("successChart").innerHTML = `<div class="empty">No proxy or direct probe samples yet.</div>`;
-    $("successAxis").innerHTML = "";
-    return;
-  }
-
-  const proxy = summary.get("proxy");
-  const t2 = summary.get("official_t2");
-  const best = [proxy, t2].filter(Boolean).map(row => row.successRate).filter(v => v != null);
-  const delta = best.length === 2 ? proxy.successRate - t2.successRate : null;
-  const deltaText = delta == null
-    ? ""
-    : ` · proxy ${delta >= 0 ? "+" : ""}${delta.toFixed(1)} pts vs official api-cc`;
-  $("successSummary").textContent =
-    `Last ${data.windowHours || 24}h · final proxy ${(proxy?.total || 0).toLocaleString()} requests · direct official ${(t2?.total || 0).toLocaleString()} probes${deltaText}`;
-
-  $("successChart").innerHTML = buckets.map(bucket => {
-    return `<div class="rate-group">${
-      sources.map(source => {
-        const point = pointForSource(bucket, source.id) || {};
-        const rate = point.successRate;
-        const height = rate == null ? 2 : Math.max(2, Math.round(rate));
-        const total = point.total || 0;
-        const ok = point.ok || 0;
-        const avg = point.avgLatencyMs == null ? "avg —" : `avg ${fmtMs(point.avgLatencyMs)}ms`;
-        const label = `${source.name} · ${fmtPct(rate)} · ${ok}/${total} ok · ${avg} · ${new Date(bucket.ts).toLocaleTimeString([], { hour: "numeric" })}`;
-        return `<span class="rate-bar ${sourceClass(source.id)} ${rate == null ? "empty" : ""}" style="height:${height}%" data-tip="${esc(label)}"></span>`;
-      }).join("")
-    }</div>`;
-  }).join("");
-
-  const first = buckets[0]?.ts;
-  const mid = buckets[Math.floor(buckets.length / 2)]?.ts;
-  const last = buckets[buckets.length - 1]?.ts;
-  $("successAxis").innerHTML = [first, mid, last]
-    .filter(Boolean)
-    .map(ts => `<span>${new Date(ts).toLocaleTimeString([], { hour: "numeric" })}</span>`)
-    .join("");
-}
-
 /* ---------- fetching ---------- */
 async function tick() {
   try {
@@ -1061,16 +833,6 @@ async function tickStats() {
     if (!res.ok) return;
     renderStats(await res.json());
   } catch {}
-}
-
-async function tickSuccessRates() {
-  try {
-    const res = await fetch("/api/success-rates", { cache: "no-store" });
-    if (!res.ok) throw new Error("status " + res.status);
-    renderSuccessRates(await res.json());
-  } catch (e) {
-    $("successSummary").textContent = `Failed to load /api/success-rates: ${e.message}`;
-  }
 }
 
 function renderStats(s) {
@@ -1098,13 +860,12 @@ function startCountdownTicker() {
 }
 
 (async function boot() {
-  await Promise.all([tick(), tickStats(), tickSuccessRates()]);
+  await Promise.all([tick(), tickStats()]);
   startCountdownTicker();
   setInterval(tick, 15000);
-  setInterval(tickSuccessRates, 30000);
   setInterval(tickStats, 30000);   // stats refresh less aggressively
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible") { tick(); tickStats(); tickSuccessRates(); }
+    if (document.visibilityState === "visible") { tick(); tickStats(); }
   });
 })();
 </script>
