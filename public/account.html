@@ -1,0 +1,409 @@
+<!doctype html>
+<html lang="en" color-scheme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>freemodel.dev - account</title>
+<meta name="theme-color" content="#0d0d0d" />
+<style>
+  :root {
+    --bg: #0d0d0d;
+    --panel: #171717;
+    --panel-2: #1f1f1f;
+    --ink: #f3f4f6;
+    --soft: #d1d5db;
+    --muted: #9ca3af;
+    --line: #2b2b2b;
+    --ok: #34d399;
+    --warn: #fbbf24;
+    --bad: #f87171;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 14px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Segoe UI", sans-serif;
+  }
+  a { color: inherit; text-decoration: none; }
+  button, input, select {
+    font: inherit;
+  }
+  button {
+    border: 1px solid var(--line);
+    background: var(--panel-2);
+    color: var(--ink);
+    border-radius: 8px;
+    padding: 9px 12px;
+    cursor: pointer;
+  }
+  button.primary { background: #0b3a25; border-color: #145c3d; color: #d1fae5; }
+  button.danger { background: #3f1518; border-color: #6b2028; color: #fecaca; }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  input, select {
+    width: 100%;
+    border: 1px solid var(--line);
+    background: #111;
+    color: var(--ink);
+    border-radius: 8px;
+    padding: 9px 10px;
+  }
+  label { display: block; color: var(--muted); font-size: 12px; margin-bottom: 5px; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { border-bottom: 1px solid var(--line); padding: 10px 8px; text-align: left; vertical-align: middle; }
+  th { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .07em; font-weight: 500; }
+  td.actions { width: 1%; white-space: nowrap; }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 28px 22px 72px; }
+  .top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding-bottom: 20px;
+    border-bottom: 1px solid #202020;
+    margin-bottom: 24px;
+  }
+  .brand { font-size: 16px; font-weight: 600; }
+  .brand b { color: var(--ok); }
+  .nav { display: flex; gap: 12px; color: var(--muted); font-size: 13px; }
+  .grid { display: grid; grid-template-columns: 360px minmax(0, 1fr); gap: 16px; align-items: start; }
+  @media (max-width: 860px) { .grid { grid-template-columns: 1fr; } }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 16px;
+  }
+  .panel h1, .panel h2 {
+    margin: 0 0 14px;
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: 0;
+  }
+  .stack { display: grid; gap: 12px; }
+  .row { display: flex; gap: 8px; align-items: end; }
+  .row > * { flex: 1; }
+  .row > button { flex: 0 0 auto; }
+  .muted { color: var(--muted); }
+  .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+  .notice {
+    display: none;
+    border: 1px solid var(--line);
+    background: var(--panel-2);
+    border-radius: 8px;
+    padding: 10px;
+    color: var(--soft);
+    overflow-wrap: anywhere;
+  }
+  .notice.show { display: block; }
+  .notice.ok { border-color: rgba(52,211,153,.35); }
+  .notice.bad { border-color: rgba(248,113,113,.35); color: #fecaca; }
+  .meta {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .tile {
+    background: var(--panel-2);
+    border: 1px solid #252525;
+    border-radius: 8px;
+    padding: 10px;
+  }
+  .tile span { display: block; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .07em; }
+  .tile b { display: block; margin-top: 4px; overflow-wrap: anywhere; font-weight: 500; }
+  .key-form {
+    display: grid;
+    grid-template-columns: 1.2fr 1.8fr .7fr .7fr auto;
+    gap: 8px;
+    align-items: end;
+    margin-bottom: 14px;
+  }
+  @media (max-width: 900px) { .key-form { grid-template-columns: 1fr; } }
+  .empty { color: var(--muted); padding: 14px 8px; }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <a class="brand" href="/"><b>freemodel</b>.dev / account</a>
+    <nav class="nav">
+      <a href="/">status</a>
+      <a href="/admin">admin</a>
+    </nav>
+  </header>
+
+  <main class="grid">
+    <section class="panel">
+      <h1>Account</h1>
+      <div class="stack">
+        <div>
+          <label for="accountId">Account ID</label>
+          <input id="accountId" class="mono" autocomplete="off" />
+        </div>
+        <div class="row">
+          <button id="loadAccount">Load</button>
+          <button id="createAccount" class="primary">Create</button>
+        </div>
+        <div id="notice" class="notice"></div>
+        <div id="accountMeta" class="meta hidden">
+          <div class="tile"><span>ID</span><b id="metaId" class="mono"></b></div>
+          <div class="tile"><span>Created</span><b id="metaCreated"></b></div>
+        </div>
+        <div id="generatedKeyWrap" class="hidden">
+          <label for="generatedKey">Internal API key</label>
+          <input id="generatedKey" class="mono" readonly />
+        </div>
+        <div id="accountActions" class="row hidden">
+          <button id="rotateKey">Rotate API key</button>
+          <button id="deleteAccount" class="danger">Delete account</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="keysPanel" class="panel hidden">
+      <h2>Upstream keys</h2>
+      <form id="keyForm" class="key-form">
+        <div>
+          <label for="keyLabel">Label</label>
+          <input id="keyLabel" autocomplete="off" />
+        </div>
+        <div>
+          <label for="apiKey">freemodel.dev API key</label>
+          <input id="apiKey" class="mono" type="password" autocomplete="off" />
+        </div>
+        <div>
+          <label for="tier">Tier</label>
+          <select id="tier">
+            <option value="T2">T2</option>
+            <option value="T0">T0</option>
+          </select>
+        </div>
+        <div>
+          <label for="priority">Priority</label>
+          <input id="priority" type="number" min="0" step="1" value="100" />
+        </div>
+        <button class="primary" type="submit">Add</button>
+      </form>
+      <div id="keysTable"></div>
+    </section>
+  </main>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let currentAccount = null;
+
+function showNotice(text, type = "ok") {
+  const el = $("notice");
+  el.textContent = text;
+  el.className = `notice show ${type}`;
+}
+
+function fmtDate(value) {
+  return value ? new Date(value).toLocaleString() : "-";
+}
+
+async function api(path, options = {}) {
+  const res = await fetch(path, {
+    ...options,
+    headers: {
+      "content-type": "application/json",
+      ...(options.headers || {}),
+    },
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
+  return body;
+}
+
+function renderAccount(account, generatedKey = "") {
+  currentAccount = account;
+  localStorage.setItem("fm_account_id", account.id);
+  $("accountId").value = account.id;
+  $("metaId").textContent = account.id;
+  $("metaCreated").textContent = fmtDate(account.createdAt);
+  $("accountMeta").classList.remove("hidden");
+  $("accountActions").classList.remove("hidden");
+  $("keysPanel").classList.remove("hidden");
+
+  if (generatedKey) {
+    $("generatedKey").value = generatedKey;
+    $("generatedKeyWrap").classList.remove("hidden");
+  }
+
+  renderKeys(account.keys || []);
+}
+
+function renderKeys(keys) {
+  if (!keys.length) {
+    $("keysTable").innerHTML = `<div class="empty">No upstream keys.</div>`;
+    return;
+  }
+
+  $("keysTable").innerHTML = `
+    <table>
+      <thead>
+        <tr>
+          <th>Label</th>
+          <th>Key</th>
+          <th>Tier</th>
+          <th>Priority</th>
+          <th>Enabled</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        ${keys.map((key) => `
+          <tr data-key-id="${key.id}">
+            <td><input data-field="label" value="${escapeAttr(key.label || "")}" /></td>
+            <td class="mono">${escapeHtml(key.keyHint || "-")}</td>
+            <td>
+              <select data-field="tier">
+                <option value="T2" ${key.tier === "T2" ? "selected" : ""}>T2</option>
+                <option value="T0" ${key.tier === "T0" ? "selected" : ""}>T0</option>
+              </select>
+            </td>
+            <td><input data-field="priority" type="number" min="0" step="1" value="${Number(key.priority ?? 100)}" /></td>
+            <td><input data-field="enabled" type="checkbox" ${key.enabled ? "checked" : ""} /></td>
+            <td class="actions">
+              <button data-action="save">Save</button>
+              <button data-action="delete" class="danger">Delete</button>
+            </td>
+          </tr>
+        `).join("")}
+      </tbody>
+    </table>`;
+}
+
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (ch) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    "\"": "&quot;",
+    "'": "&#39;",
+  }[ch]));
+}
+
+function escapeAttr(value) {
+  return escapeHtml(value).replace(/"/g, "&quot;");
+}
+
+async function loadAccount(id = $("accountId").value.trim()) {
+  if (!id) return;
+  const body = await api(`/api/accounts/${encodeURIComponent(id)}`);
+  renderAccount(body.account);
+  showNotice("Account loaded.");
+}
+
+$("createAccount").addEventListener("click", async () => {
+  try {
+    const body = await api("/api/accounts", { method: "POST", body: "{}" });
+    renderAccount(body.account, body.apiKey);
+    showNotice("Account created.");
+  } catch (err) {
+    showNotice(err.message, "bad");
+  }
+});
+
+$("loadAccount").addEventListener("click", () => {
+  loadAccount().catch((err) => showNotice(err.message, "bad"));
+});
+
+$("rotateKey").addEventListener("click", async () => {
+  if (!currentAccount) return;
+  try {
+    const body = await api(`/api/accounts/${encodeURIComponent(currentAccount.id)}/api-key`, {
+      method: "POST",
+      body: "{}",
+    });
+    $("generatedKey").value = body.apiKey;
+    $("generatedKeyWrap").classList.remove("hidden");
+    showNotice("API key rotated.");
+  } catch (err) {
+    showNotice(err.message, "bad");
+  }
+});
+
+$("deleteAccount").addEventListener("click", async () => {
+  if (!currentAccount) return;
+  if (!confirm(`Delete ${currentAccount.id}?`)) return;
+  try {
+    await api(`/api/accounts/${encodeURIComponent(currentAccount.id)}`, { method: "DELETE" });
+    localStorage.removeItem("fm_account_id");
+    currentAccount = null;
+    $("accountMeta").classList.add("hidden");
+    $("accountActions").classList.add("hidden");
+    $("keysPanel").classList.add("hidden");
+    $("generatedKeyWrap").classList.add("hidden");
+    showNotice("Account deleted.");
+  } catch (err) {
+    showNotice(err.message, "bad");
+  }
+});
+
+$("keyForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (!currentAccount) return;
+  try {
+    const body = await api(`/api/accounts/${encodeURIComponent(currentAccount.id)}/keys`, {
+      method: "POST",
+      body: JSON.stringify({
+        label: $("keyLabel").value,
+        apiKey: $("apiKey").value,
+        tier: $("tier").value,
+        priority: $("priority").value,
+      }),
+    });
+    $("keyLabel").value = "";
+    $("apiKey").value = "";
+    renderAccount(body.account);
+    showNotice("Upstream key added.");
+  } catch (err) {
+    showNotice(err.message, "bad");
+  }
+});
+
+$("keysTable").addEventListener("click", async (event) => {
+  const button = event.target.closest("button");
+  if (!button || !currentAccount) return;
+  const row = button.closest("tr");
+  const keyId = row?.dataset.keyId;
+  if (!keyId) return;
+
+  try {
+    if (button.dataset.action === "delete") {
+      const body = await api(`/api/accounts/${encodeURIComponent(currentAccount.id)}/keys/${encodeURIComponent(keyId)}`, {
+        method: "DELETE",
+      });
+      renderAccount(body.account);
+      showNotice("Upstream key deleted.");
+      return;
+    }
+
+    const body = await api(`/api/accounts/${encodeURIComponent(currentAccount.id)}/keys/${encodeURIComponent(keyId)}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        label: row.querySelector("[data-field='label']").value,
+        tier: row.querySelector("[data-field='tier']").value,
+        priority: row.querySelector("[data-field='priority']").value,
+        enabled: row.querySelector("[data-field='enabled']").checked,
+      }),
+    });
+    renderAccount(body.account);
+    showNotice("Upstream key saved.");
+  } catch (err) {
+    showNotice(err.message, "bad");
+  }
+});
+
+const remembered = localStorage.getItem("fm_account_id");
+if (remembered) {
+  $("accountId").value = remembered;
+  loadAccount(remembered).catch(() => {});
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,421 @@
+<!doctype html>
+<html lang="en" color-scheme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>freemodel.dev - admin</title>
+<meta name="theme-color" content="#0d0d0d" />
+<style>
+  :root {
+    --bg: #0d0d0d;
+    --panel: #171717;
+    --panel-2: #202020;
+    --ink: #f3f4f6;
+    --soft: #d1d5db;
+    --muted: #9ca3af;
+    --line: #2b2b2b;
+    --ok: #34d399;
+    --warn: #fbbf24;
+    --bad: #f87171;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 14px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Segoe UI", sans-serif;
+  }
+  a { color: inherit; text-decoration: none; }
+  button, input {
+    font: inherit;
+  }
+  button {
+    border: 1px solid var(--line);
+    background: var(--panel-2);
+    color: var(--ink);
+    border-radius: 8px;
+    padding: 8px 11px;
+    cursor: pointer;
+  }
+  button.primary { background: #0b3a25; border-color: #145c3d; color: #d1fae5; }
+  button.danger { background: #3f1518; border-color: #6b2028; color: #fecaca; }
+  input {
+    width: 100%;
+    border: 1px solid var(--line);
+    background: #111;
+    color: var(--ink);
+    border-radius: 8px;
+    padding: 9px 10px;
+  }
+  label { display: block; color: var(--muted); font-size: 12px; margin-bottom: 5px; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { border-bottom: 1px solid var(--line); padding: 9px 8px; text-align: left; vertical-align: top; }
+  th { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .07em; font-weight: 500; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 28px 22px 72px; }
+  .top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding-bottom: 20px;
+    border-bottom: 1px solid #202020;
+    margin-bottom: 22px;
+  }
+  .brand { font-size: 16px; font-weight: 600; }
+  .brand b { color: var(--ok); }
+  .nav { display: flex; gap: 12px; color: var(--muted); font-size: 13px; }
+  .toolbar {
+    display: grid;
+    grid-template-columns: minmax(260px, 1fr) auto auto;
+    gap: 8px;
+    align-items: end;
+    margin-bottom: 16px;
+  }
+  @media (max-width: 720px) { .toolbar { grid-template-columns: 1fr; } }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 960px) { .grid { grid-template-columns: 1fr; } }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 15px;
+    overflow: hidden;
+  }
+  .wide { grid-column: 1 / -1; }
+  .panel h1, .panel h2 {
+    margin: 0 0 12px;
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: 0;
+  }
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+    margin-bottom: 16px;
+  }
+  @media (max-width: 760px) { .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .tile {
+    background: var(--panel-2);
+    border: 1px solid #262626;
+    border-radius: 8px;
+    padding: 11px;
+  }
+  .tile span { display: block; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .07em; }
+  .tile b { display: block; font-size: 22px; line-height: 1.1; margin-top: 5px; font-variant-numeric: tabular-nums; }
+  .ok { color: var(--ok); }
+  .bad { color: var(--bad); }
+  .muted { color: var(--muted); }
+  .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+  .notice {
+    display: none;
+    border: 1px solid var(--line);
+    background: var(--panel-2);
+    border-radius: 8px;
+    padding: 9px 10px;
+    margin-bottom: 14px;
+    color: var(--soft);
+  }
+  .notice.show { display: block; }
+  .notice.bad { border-color: rgba(248,113,113,.35); color: #fecaca; }
+  .chart { display: grid; gap: 8px; }
+  .bar {
+    display: grid;
+    grid-template-columns: 80px 1fr 54px;
+    gap: 8px;
+    align-items: center;
+    font-variant-numeric: tabular-nums;
+  }
+  .track { height: 9px; background: #111; border-radius: 999px; overflow: hidden; border: 1px solid #262626; }
+  .fill { height: 100%; background: var(--ok); min-width: 2px; }
+  .fill.warn { background: var(--warn); }
+  .fill.bad { background: var(--bad); }
+  .scroll { overflow-x: auto; }
+  .pill {
+    display: inline-block;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 2px 7px;
+    color: var(--soft);
+    background: var(--panel-2);
+    font-size: 12px;
+  }
+  .details {
+    background: #111;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 10px;
+    max-height: 360px;
+    overflow: auto;
+    white-space: pre-wrap;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <a class="brand" href="/"><b>freemodel</b>.dev / admin</a>
+    <nav class="nav">
+      <a href="/">status</a>
+      <a href="/account">account</a>
+    </nav>
+  </header>
+
+  <div class="toolbar">
+    <div>
+      <label for="adminToken">Admin token</label>
+      <input id="adminToken" class="mono" type="password" autocomplete="off" />
+    </div>
+    <button id="saveToken">Save</button>
+    <button id="refresh" class="primary">Refresh</button>
+  </div>
+  <div id="notice" class="notice"></div>
+
+  <section class="stats">
+    <div class="tile"><span>Proxy</span><b id="proxyState">-</b></div>
+    <div class="tile"><span>Requests 24h</span><b id="req24">-</b></div>
+    <div class="tile"><span>OK 24h</span><b id="ok24" class="ok">-</b></div>
+    <div class="tile"><span>Failed 24h</span><b id="fail24" class="bad">-</b></div>
+  </section>
+
+  <main class="grid">
+    <section class="panel">
+      <h2>Controls</h2>
+      <button id="toggleProxy">Toggle proxy</button>
+      <span id="avgLatency" class="pill">avg - ms</span>
+    </section>
+
+    <section class="panel">
+      <h2>Charts</h2>
+      <div id="charts" class="chart"></div>
+    </section>
+
+    <section class="panel wide">
+      <h2>Active requests</h2>
+      <div id="activeTable" class="scroll"></div>
+    </section>
+
+    <section class="panel wide">
+      <h2>Request history</h2>
+      <div id="recentTable" class="scroll"></div>
+    </section>
+
+    <section class="panel wide">
+      <h2>Request details</h2>
+      <pre id="details" class="details mono">-</pre>
+    </section>
+
+    <section class="panel wide">
+      <h2>Accounts</h2>
+      <div id="accountsTable" class="scroll"></div>
+    </section>
+  </main>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let overview = null;
+
+function showNotice(text, type = "ok") {
+  const el = $("notice");
+  el.textContent = text;
+  el.className = `notice show ${type}`;
+}
+
+function token() {
+  return $("adminToken").value.trim();
+}
+
+async function api(path, options = {}) {
+  const res = await fetch(path, {
+    ...options,
+    headers: {
+      "content-type": "application/json",
+      "x-admin-token": token(),
+      ...(options.headers || {}),
+    },
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
+  return body;
+}
+
+function fmtDate(value) {
+  return value ? new Date(value).toLocaleString() : "-";
+}
+
+function fmtMs(value) {
+  return value == null ? "-" : `${Math.round(value).toLocaleString()} ms`;
+}
+
+function esc(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (ch) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    "\"": "&quot;",
+    "'": "&#39;",
+  }[ch]));
+}
+
+function renderBar(label, count, max, tone = "") {
+  const pct = max ? Math.max(2, Math.round((count / max) * 100)) : 0;
+  return `
+    <div class="bar">
+      <span class="mono">${esc(label)}</span>
+      <span class="track"><span class="fill ${tone}" style="width:${pct}%"></span></span>
+      <span>${Number(count || 0).toLocaleString()}</span>
+    </div>`;
+}
+
+function renderCharts(data) {
+  const statusMax = Math.max(1, ...data.byStatus.map((row) => row.requests || 0));
+  const tierMax = Math.max(1, ...data.byTier.map((row) => row.requests || 0));
+  const statusBars = data.byStatus.map((row) => {
+    const status = Number(row.status || 0);
+    const tone = status >= 500 || status === 0 ? "bad" : status >= 400 ? "warn" : "";
+    return renderBar(status || "none", row.requests, statusMax, tone);
+  }).join("");
+  const tierBars = data.byTier.map((row) => renderBar(row.tier, row.requests, tierMax)).join("");
+  $("charts").innerHTML = statusBars || tierBars
+    ? `${statusBars}${tierBars ? `<div style="height:6px"></div>${tierBars}` : ""}`
+    : `<span class="muted">No proxy requests.</span>`;
+}
+
+function requestTable(rows, active = false) {
+  if (!rows.length) return `<div class="muted">No ${active ? "active" : "recent"} requests.</div>`;
+  return `
+    <table>
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Route</th>
+          <th>Status</th>
+          <th>Attempts</th>
+          <th>Tier</th>
+          <th>Latency</th>
+          <th>Started</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rows.map((row) => `
+          <tr>
+            <td class="mono">${esc(row.id)}</td>
+            <td><span class="mono">${esc(row.method)} ${esc(row.path)}</span>${row.model ? `<br><span class="muted">${esc(row.model)}</span>` : ""}</td>
+            <td>${active ? esc(row.status) : esc(row.status ?? "-")}</td>
+            <td>${active ? esc((row.attempts || []).length) : esc(row.attempts)}</td>
+            <td>${esc(row.upstreamTier || row.current?.tier || "-")}</td>
+            <td>${fmtMs(row.latencyMs)}</td>
+            <td>${fmtDate(row.startedAt)}</td>
+            <td>${active ? "" : `<button data-request-id="${esc(row.id)}">Open</button>`}</td>
+          </tr>
+        `).join("")}
+      </tbody>
+    </table>`;
+}
+
+function accountTable(rows) {
+  if (!rows.length) return `<div class="muted">No accounts.</div>`;
+  return `
+    <table>
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Keys</th>
+          <th>Requests</th>
+          <th>Last request</th>
+          <th>Created</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rows.map((row) => `
+          <tr>
+            <td class="mono">${esc(row.id)}</td>
+            <td>${esc(row.enabledKeys)} / ${esc(row.keys)}</td>
+            <td>${esc(row.requests)}</td>
+            <td>${fmtDate(row.lastRequestAt)}</td>
+            <td>${fmtDate(row.createdAt)}</td>
+            <td><button class="danger" data-account-id="${esc(row.id)}">Delete</button></td>
+          </tr>
+        `).join("")}
+      </tbody>
+    </table>`;
+}
+
+function render(data) {
+  overview = data;
+  $("proxyState").textContent = data.system.proxyEnabled ? "enabled" : "disabled";
+  $("proxyState").className = data.system.proxyEnabled ? "ok" : "bad";
+  $("req24").textContent = (data.totals24h.requests || 0).toLocaleString();
+  $("ok24").textContent = (data.totals24h.ok || 0).toLocaleString();
+  $("fail24").textContent = (data.totals24h.failed || 0).toLocaleString();
+  $("avgLatency").textContent = `avg ${fmtMs(data.totals24h.avgLatencyMs)}`;
+  $("toggleProxy").textContent = data.system.proxyEnabled ? "Disable proxy" : "Enable proxy";
+  renderCharts(data);
+  $("activeTable").innerHTML = requestTable(data.active || [], true);
+  $("recentTable").innerHTML = requestTable(data.recent || [], false);
+  $("accountsTable").innerHTML = accountTable(data.accounts || []);
+}
+
+async function load() {
+  const data = await api("/api/admin/overview");
+  render(data);
+  showNotice("Admin data loaded.");
+}
+
+$("saveToken").addEventListener("click", () => {
+  localStorage.setItem("fm_admin_token", token());
+  showNotice("Token saved.");
+});
+
+$("refresh").addEventListener("click", () => {
+  load().catch((err) => showNotice(err.message, "bad"));
+});
+
+$("toggleProxy").addEventListener("click", async () => {
+  if (!overview) return;
+  try {
+    await api("/api/admin/system", {
+      method: "PATCH",
+      body: JSON.stringify({ proxyEnabled: !overview.system.proxyEnabled }),
+    });
+    await load();
+  } catch (err) {
+    showNotice(err.message, "bad");
+  }
+});
+
+$("recentTable").addEventListener("click", async (event) => {
+  const button = event.target.closest("button[data-request-id]");
+  if (!button) return;
+  try {
+    const body = await api(`/api/admin/requests/${encodeURIComponent(button.dataset.requestId)}`);
+    $("details").textContent = JSON.stringify(body, null, 2);
+  } catch (err) {
+    showNotice(err.message, "bad");
+  }
+});
+
+$("accountsTable").addEventListener("click", async (event) => {
+  const button = event.target.closest("button[data-account-id]");
+  if (!button) return;
+  if (!confirm(`Delete ${button.dataset.accountId}?`)) return;
+  try {
+    await api(`/api/admin/accounts/${encodeURIComponent(button.dataset.accountId)}`, { method: "DELETE" });
+    await load();
+  } catch (err) {
+    showNotice(err.message, "bad");
+  }
+});
+
+$("adminToken").value = localStorage.getItem("fm_admin_token") || "";
+if ($("adminToken").value) load().catch((err) => showNotice(err.message, "bad"));
+setInterval(() => {
+  if (token()) load().catch(() => {});
+}, 15000);
+</script>
+</body>
+</html>

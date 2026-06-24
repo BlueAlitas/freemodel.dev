@@ -5,6 +5,7 @@
 # Required env (set in Dokploy → Environment):
 #   DATABASE_URL         Postgres connection string.
 #   FREEMODEL_TOKEN      Bearer token for the cc.freemodel.dev probes.
+#   ADMIN_TOKEN          Token for /api/admin/* access.
 
 services:
   status:
@@ -21,6 +22,12 @@ services:
       FREEMODEL_TOKEN: ${FREEMODEL_TOKEN:-}
       ANTHROPIC_VERSION: ${ANTHROPIC_VERSION:-2023-06-01}
       TARGET_URLS: ${TARGET_URLS:-https://cc.freemodel.dev,https://api-cc.freemodel.dev}
+      PROXY_T2_URL: ${PROXY_T2_URL:-https://api-cc.freemodel.dev}
+      PROXY_T0_URL: ${PROXY_T0_URL:-https://cc.freemodel.dev}
+      PROXY_RETRIES_PER_CREDENTIAL: ${PROXY_RETRIES_PER_CREDENTIAL:-10}
+      PROXY_BODY_LIMIT: ${PROXY_BODY_LIMIT:-20mb}
+      ADMIN_TOKEN: ${ADMIN_TOKEN:-}
+      PROXY_KEY_SECRET: ${PROXY_KEY_SECRET:-}
       TEST_MODELS: ${TEST_MODELS:-claude-haiku-4-5-20251001}
       INTERVAL_HEALTHY_MS: ${INTERVAL_HEALTHY_MS:-1800000}
       INTERVAL_RETRY_MS: ${INTERVAL_RETRY_MS:-60000}

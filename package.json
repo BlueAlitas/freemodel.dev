@@ -7,7 +7,10 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
-    "probe": "node probe.js"
+    "probe": "node probe.js",
+    "test": "node --test",
+    "test:db": "node scripts/db-smoke-check.js",
+    "test:live": "node scripts/live-freemodel-check.js"
   },
   "engines": {
     "node": ">=20"

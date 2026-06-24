@@ -99,6 +99,80 @@ CREATE TABLE IF NOT EXISTS sessions (
   last_seen  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS sessions_last_seen_idx ON sessions (last_seen DESC);
+
+CREATE TABLE IF NOT EXISTS accounts (
+  id           TEXT        PRIMARY KEY,
+  api_key_hash TEXT        NOT NULL UNIQUE,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS accounts_created_at_idx ON accounts (created_at DESC);
+
+CREATE TABLE IF NOT EXISTS account_upstream_keys (
+  id             TEXT        PRIMARY KEY,
+  account_id     TEXT        NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  label          TEXT,
+  tier           TEXT        NOT NULL CHECK (tier IN ('T0', 'T2')),
+  priority       INT         NOT NULL DEFAULT 100,
+  enabled        BOOLEAN     NOT NULL DEFAULT true,
+  key_hash       TEXT        NOT NULL,
+  key_hint       TEXT        NOT NULL,
+  key_ciphertext TEXT        NOT NULL,
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS account_upstream_keys_account_idx
+  ON account_upstream_keys (account_id, enabled, tier, priority, created_at);
+CREATE UNIQUE INDEX IF NOT EXISTS account_upstream_keys_unique_hash_idx
+  ON account_upstream_keys (account_id, key_hash);
+
+CREATE TABLE IF NOT EXISTS proxy_requests (
+  id            TEXT        PRIMARY KEY,
+  account_id    TEXT        REFERENCES accounts(id) ON DELETE SET NULL,
+  method        TEXT        NOT NULL,
+  route_path    TEXT        NOT NULL,
+  request_model TEXT,
+  ok            BOOLEAN,
+  final_status  INT,
+  latency_ms    REAL,
+  attempts      INT         NOT NULL DEFAULT 0,
+  upstream_tier TEXT,
+  upstream_url  TEXT,
+  error         TEXT,
+  streamed      BOOLEAN     NOT NULL DEFAULT false,
+  started_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  completed_at  TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS proxy_requests_started_at_idx
+  ON proxy_requests (started_at DESC);
+CREATE INDEX IF NOT EXISTS proxy_requests_account_idx
+  ON proxy_requests (account_id, started_at DESC);
+
+CREATE TABLE IF NOT EXISTS proxy_attempts (
+  id             BIGSERIAL   PRIMARY KEY,
+  request_id     TEXT        NOT NULL REFERENCES proxy_requests(id) ON DELETE CASCADE,
+  attempt_no     INT         NOT NULL,
+  account_key_id TEXT,
+  tier           TEXT        NOT NULL,
+  upstream_url   TEXT        NOT NULL,
+  status         INT         NOT NULL DEFAULT 0,
+  ok             BOOLEAN     NOT NULL DEFAULT false,
+  latency_ms     REAL        NOT NULL,
+  error          TEXT,
+  ts             TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS proxy_attempts_request_idx
+  ON proxy_attempts (request_id, attempt_no);
+CREATE INDEX IF NOT EXISTS proxy_attempts_ts_idx
+  ON proxy_attempts (ts DESC);
+
+CREATE TABLE IF NOT EXISTS system_settings (
+  key        TEXT        PRIMARY KEY,
+  value      TEXT        NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+INSERT INTO system_settings (key, value)
+VALUES ('proxy_enabled', 'true')
+ON CONFLICT (key) DO NOTHING;
 `;
 
 /** Wait for DB to be ready, then create tables. Retries with backoff. */

@@ -5,11 +5,17 @@
  *
  *  Routes:
  *    GET  /                       status page
+ *    ANY  /v1/*                   Anthropic-compatible reverse proxy
+ *    ANY  /proxy/v1/*             reverse proxy with /proxy stripped
+ *    GET  /account                account/key management page
+ *    GET  /admin                  admin page
  *    GET  /api/status             full snapshot
  *    GET  /api/health             liveness
  *    GET  /api/config             public config
  *    GET  /api/stats              unique visitor stats (today, active, 30d)
- *    GET  /api/visits/recent      recent visit log (admin)
+ *    GET  /api/visits/recent      recent visit log (admin token)
+ *    ...  /api/accounts/*         generated accounts + upstream keys
+ *    ...  /api/admin/*            admin controls/history/charts
  *
  *  Visitor tracking:
  *    - Every tracked page request is grouped by a one-way hash of
@@ -27,6 +33,7 @@ import { createHash } from "node:crypto";
 
 import { init as dbInit, query } from "./db.js";
 import * as poller from "./poller.js";
+import { createAdminAuth, registerAccountAndAdminRoutes, registerProxyRoutes } from "./proxy.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = parseInt(process.env.PORT ?? "3000", 10);
@@ -38,8 +45,14 @@ const app = express();
 app.disable("x-powered-by");
 app.set("trust proxy", true); // honour X-Forwarded-For from Traefik
 
-// Tiny body parser for /api/visits (we don't accept bodies elsewhere)
+// Raw proxy routes must be registered before JSON parsing so requests can
+// be replayed across upstream retries without losing the original body.
+registerProxyRoutes(app, { query });
+const adminAuth = createAdminAuth();
+
+// JSON parser for account/admin/status APIs.
 app.use(express.json({ limit: "32kb" }));
+registerAccountAndAdminRoutes(app, { query });
 
 /* ---------- visitor tracking middleware ---------- */
 const trackPrefixes = TRACK_PATHS.split(",").map(s => s.trim()).filter(Boolean);
@@ -424,7 +437,7 @@ app.get("/api/stats", async (_req, res) => {
   }
 });
 
-app.get("/api/visits/recent", async (req, res) => {
+app.get("/api/visits/recent", adminAuth, async (req, res) => {
   const limit = Math.min(200, parseInt(req.query.limit ?? "50", 10));
   try {
     const { rows } = await query(`
