@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { once } from "node:events";
 import http from "node:http";
 import test from "node:test";
+import { gzipSync } from "node:zlib";
 
 import express from "express";
 
@@ -231,6 +232,51 @@ test("direct proxy supports bodyless GET model discovery", async () => {
   }
 });
 
+test("proxy strips stale content-encoding after upstream decompression", async () => {
+  const t2 = await createUpstream((_req, res) => {
+    res.writeHead(200, {
+      "content-type": "text/plain",
+      "content-encoding": "gzip",
+    });
+    res.end(gzipSync("ok"));
+  });
+  const t0 = await createUpstream((_req, res) => {
+    res.writeHead(500);
+    res.end();
+  });
+  const store = createMemoryStore();
+  const proxy = await createProxyServer({
+    store,
+    config: {
+      targets: { T2: t2.url, T0: t0.url },
+      retriesPerCredential: 10,
+      failureBodyDrainBytes: 1024,
+    },
+  });
+
+  try {
+    const res = await fetch(`${proxy.url}/v1/messages`, {
+      method: "POST",
+      headers: {
+        authorization: "direct-user-key",
+        "accept-encoding": "gzip, br, zstd",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ model: "claude-haiku-4-5-20251001" }),
+    });
+    const body = await res.text();
+
+    assert.equal(res.status, 200);
+    assert.equal(body, "ok");
+    assert.equal(res.headers.get("content-encoding"), null);
+    assert.equal(t2.requests[0].headers["accept-encoding"], "identity");
+  } finally {
+    await close(proxy.server);
+    await close(t2.server);
+    await close(t0.server);
+  }
+});
+
 test("internal account proxy rotates upstream keys by priority", async () => {
   const seenAuth = [];
   const t2 = await createUpstream((_req, res, record) => {
@@ -271,6 +317,8 @@ test("internal account proxy rotates upstream keys by priority", async () => {
       method: "POST",
       headers: {
         authorization: "Barear internal-key",
+        "x-api-key": "internal-key",
+        "anthropic-api-key": "internal-key",
         "content-type": "application/json",
       },
       body: JSON.stringify({ model: "claude-haiku-4-5-20251001", stream: true }),
@@ -284,6 +332,10 @@ test("internal account proxy rotates upstream keys by priority", async () => {
       "Bearer upstream-a",
       "Bearer upstream-b",
     ]);
+    assert.equal(t2.requests[0].headers["x-api-key"], "upstream-a");
+    assert.equal(t2.requests[0].headers["anthropic-api-key"], "upstream-a");
+    assert.equal(t2.requests[2].headers["x-api-key"], "upstream-b");
+    assert.equal(t2.requests[2].headers["anthropic-api-key"], "upstream-b");
     assert.equal(t0.requests.length, 0);
     assert.equal(store.state.requests[0].accountId, "acct_test");
     assert.equal(store.state.attempts.length, 3);

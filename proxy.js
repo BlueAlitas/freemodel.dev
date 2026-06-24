@@ -27,6 +27,14 @@ const HOP_BY_HOP_HEADERS = new Set([
   "host",
   "content-length",
 ]);
+const DECOMPRESSED_RESPONSE_HEADERS = new Set([
+  "content-encoding",
+]);
+const CREDENTIAL_HEADERS = new Set([
+  "authorization",
+  "x-api-key",
+  "anthropic-api-key",
+]);
 
 const NO_BODY_METHODS = new Set(["GET", "HEAD"]);
 const TOKEN_PREFIX_RE = /^(bearer|barear)\s+/i;
@@ -206,18 +214,24 @@ function extractRequestModel(rawBody, contentType) {
 
 function buildUpstreamHeaders(req, token) {
   const headers = {};
+  const cleanToken = extractAuthorizationToken(token);
   for (const [name, value] of Object.entries(req.headers || {})) {
     const lower = name.toLowerCase();
     if (HOP_BY_HOP_HEADERS.has(lower)) continue;
+    if (lower === "accept-encoding") continue;
+    if (CREDENTIAL_HEADERS.has(lower)) continue;
     if (value == null) continue;
     headers[lower] = Array.isArray(value) ? value.join(", ") : String(value);
   }
 
-  const authorization = bearerHeader(token);
+  const authorization = bearerHeader(cleanToken);
   if (authorization) headers.authorization = authorization;
   else delete headers.authorization;
+  if (cleanToken && req.get("x-api-key")) headers["x-api-key"] = cleanToken;
+  if (cleanToken && req.get("anthropic-api-key")) headers["anthropic-api-key"] = cleanToken;
 
   headers.accept = headers.accept || "application/json";
+  headers["accept-encoding"] = "identity";
   return headers;
 }
 
@@ -297,6 +311,7 @@ function writeProxyResponseHeaders(upstream, downstream, requestId) {
   for (const [name, value] of upstream.headers) {
     const lower = name.toLowerCase();
     if (HOP_BY_HOP_HEADERS.has(lower)) continue;
+    if (DECOMPRESSED_RESPONSE_HEADERS.has(lower)) continue;
     downstream.setHeader(name, value);
   }
   downstream.setHeader("x-proxy-request-id", requestId);
