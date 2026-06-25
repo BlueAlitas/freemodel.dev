@@ -9,6 +9,7 @@ Live status, latency, reverse proxying, account API-key rotation, admin controls
 * **Accounts**: users can create a generated account ID, receive an internal API key, store multiple freemodel.dev keys by tier and priority, and delete the account.
 * **Admin**: `/admin` uses `ADMIN_TOKEN` for account deletion, proxy enable/disable, active request visibility, request history, and charts.
 * **Storage**: PostgreSQL (auto-creates tables on boot).
+* **Worker pool**: `WEB_CONCURRENCY` can run multiple Node web workers behind one primary process, so concurrent proxy traffic is spread across processes.
 * **Visitor stats**: tracked as unique visitors using a one-way hash of IP + User-Agent. Reloading the page updates activity but does not create another visit.
 
 ## Run locally
@@ -47,6 +48,18 @@ DATABASE_URL=postgres://fm:fm@localhost:5432/freemodel_status
 3. Set the environment variables in Dokploy's UI (notably `DATABASE_URL` and `FREEMODEL_TOKEN`).
 4. In **Domains**, add `fm.bluealitas.com` — Dokploy will write the Traefik labels and provision a Let's Encrypt certificate. (The compose file already includes the labels as a fallback.)
 5. Connect Dokploy to your managed Postgres and paste its connection string into `DATABASE_URL`.
+6. Set `WEB_CONCURRENCY` to the number of Node web workers per container. The compose default is `2`.
+7. Set `POSTGRES_POOL_MAX` based on the Postgres connection limit divided by the total Node process count. With the default primary poller plus two workers, the default `20` means roughly 60 database connections per container.
+
+## Production readiness
+
+The reverse proxy path is async and streams successful upstream responses back to clients. It does not store request or response bodies, and it disables Node socket timeouts for long Claude streams. Failed upstream responses are drained only up to `PROXY_FAILURE_DRAIN_BYTES`, then retried or hidden behind the final 502 response.
+
+For production, `WEB_CONCURRENCY` starts a primary process plus multiple web workers sharing the same HTTP port. The primary runs the status poller once, while workers handle `/v1/*`, `/account`, `/admin`, and API traffic. Status workers read poller history from Postgres, so scaling workers does not duplicate upstream probe calls.
+
+The main shared bottleneck is Postgres metadata writes and account/key lookups. Production defaults use a `20` connection pool per Node process, short 5-second account/key lookup caching with single-flight coalescing, and indexes for admin history, active requests, and account usage charts. For thousands of users, use `WEB_CONCURRENCY` inside each container and, if needed, multiple Dokploy replicas. Keep `POSTGRES_POOL_MAX * (WEB_CONCURRENCY + 1) * replicas` below the database connection limit, and keep Traefik/proxy read idle timeouts long enough for streamed LLM responses.
+
+The public home page is intentionally based only on the internal poller's `probes` table. User proxy failures are visible on `/account` for that account and `/admin` for operators, but they do not change the home-screen service status.
 
 ## Routes
 
@@ -88,12 +101,18 @@ Admin API access uses `ADMIN_TOKEN` through `x-admin-token`, `Authorization`, or
 | Env | Default | Notes |
 |---|---|---|
 | `DATABASE_URL` | _(required)_ | `postgres://user:pass@host:5432/db` |
+| `POSTGRES_POOL_MAX` | `20` | Max Postgres connections per Node process. Aliases: `DATABASE_POOL_MAX`, `PGPOOL_MAX`. |
+| `WEB_CONCURRENCY` | `1` locally / `2` in compose | Number of web worker processes sharing the HTTP port. Supports `auto`. |
+| `POLLER_ENABLED` | `true` | Run the internal status poller. In clustered mode, only the primary runs it. |
 | `TARGET_URLS` | `https://cc.freemodel.dev,https://api-cc.freemodel.dev` | Comma-separated. |
 | `FREEMODEL_TOKEN` | _(empty)_ | Bearer token sent as `Authorization: Bearer …`. |
 | `PROXY_T2_URL` | `https://api-cc.freemodel.dev` | Preferred proxy upstream. |
 | `PROXY_T0_URL` | `https://cc.freemodel.dev` | Proxy fallback upstream. |
 | `PROXY_RETRIES_PER_CREDENTIAL` | `10` | Attempts per direct key, stored account key, or tier. |
 | `PROXY_BODY_LIMIT` | `20mb` | Max buffered request body for retryable proxy requests. |
+| `PROXY_FAILURE_DRAIN_BYTES` | `65536` | Max failed-response bytes drained before retrying another upstream attempt. |
+| `PROXY_ACCOUNT_CACHE_MS` | `5000` | Short cache for internal API-key and stored upstream-key lookups. Set `0` to disable. |
+| `PROXY_ACCOUNT_CACHE_MAX` | `10000` | Max cached account/key entries per app process. |
 | `ADMIN_TOKEN` | _(empty)_ | Required token for `/api/admin/*`. |
 | `PROXY_KEY_SECRET` | `ADMIN_TOKEN` / local fallback | AES-GCM secret for stored upstream API keys. |
 | `TEST_MODELS` | `claude-haiku-4-5-20251001` | `*` = test every discovered model. |
@@ -130,13 +149,21 @@ Auto-created on boot:
 npm test
 ```
 
-The deterministic test suite uses local mock upstreams and covers retry fallback, internal-key rotation, disabled-proxy behavior, and the no-body-storage invariant.
+The deterministic test suite uses local mock upstreams and covers retry fallback, bodyless model discovery, internal-key rotation, stale compressed-header handling, concurrent proxied requests, disabled-proxy behavior, poller error sanitization, and the no-body-storage invariant.
 
 To smoke-test account/admin routes against the configured Postgres without touching upstream LLM APIs:
 
 ```bash
 npm run test:db
 ```
+
+To smoke-test the production worker-pool boot path locally, without upstream probe calls:
+
+```bash
+npm run test:cluster
+```
+
+That command starts `server.js` with `WEB_CONCURRENCY=2` and `POLLER_ENABLED=false`, sends parallel health requests, and verifies they are served by at least two worker processes.
 
 To run a live low-cost check through the local proxy using `.env.test`:
 
@@ -145,6 +172,30 @@ FREEMODEL_API_KEYS="key1,key2" npm run test:live
 ```
 
 The live check reads `FREEMODEL_API_KEYS` from `.env.test`, verifies `/v1/models` includes `claude-haiku-4-5-20251001`, and makes one streamed Haiku request through the proxy.
+
+To test the deployed production proxy with Claude Code:
+
+1. Create or load an account on `https://fm.bluealitas.com/account`, add at least one enabled upstream freemodel.dev key, and copy the generated internal `fmk_...` key.
+2. Back up `~/.claude/settings.json`, then set Claude Code to the production proxy URL:
+
+```json
+{
+  "env": {
+    "ANTHROPIC_BASE_URL": "https://fm.bluealitas.com",
+    "ANTHROPIC_API_KEY": "fmk_...",
+    "ANTHROPIC_AUTH_TOKEN": "fmk_..."
+  },
+  "apiKeyHelper": "printf '%s' 'fmk_...'"
+}
+```
+
+3. Run:
+
+```bash
+claude -p "Reply with exactly OK." --model claude-haiku-4-5-20251001
+```
+
+Expected output is exactly `OK`. Do not commit real `fmk_...` keys.
 
 ## Privacy
 

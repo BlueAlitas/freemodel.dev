@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { once } from "node:events";
 import http from "node:http";
 import test from "node:test";
+import { setTimeout as wait } from "node:timers/promises";
 import { gzipSync } from "node:zlib";
 
 import express from "express";
@@ -9,6 +10,7 @@ import express from "express";
 import {
   buildAccountAttemptPlan,
   buildDirectAttemptPlan,
+  createPostgresProxyStore,
   createProxyMiddleware,
   decryptSecret,
   encryptSecret,
@@ -16,6 +18,7 @@ import {
   keyHint,
   tokenHash,
 } from "../proxy.js";
+import { extractProbeError } from "../poller.js";
 
 async function listen(server) {
   server.listen(0, "127.0.0.1");
@@ -88,10 +91,11 @@ function createMemoryStore({ enabled = true, accounts = [], keysByAccount = {} }
 
 async function createProxyServer({ store, config }) {
   const app = express();
+  let requestSeq = 0;
   app.all("/v1/*", express.raw({ type: "*/*", limit: "1mb" }), createProxyMiddleware({
     store,
     config,
-    idFactory: () => "prx_test",
+    idFactory: () => `prx_test_${++requestSeq}`,
   }));
   const server = http.createServer(app);
   const url = await listen(server);
@@ -277,6 +281,86 @@ test("proxy strips stale content-encoding after upstream decompression", async (
   }
 });
 
+test("proxy handles many requests concurrently", async () => {
+  let active = 0;
+  let maxActive = 0;
+  const t2 = await createUpstream(async (_req, res) => {
+    active += 1;
+    maxActive = Math.max(maxActive, active);
+    await wait(80);
+    active -= 1;
+    res.writeHead(200, { "content-type": "text/plain" });
+    res.end("ok");
+  });
+  const t0 = await createUpstream((_req, res) => {
+    res.writeHead(500);
+    res.end();
+  });
+  const store = createMemoryStore();
+  const proxy = await createProxyServer({
+    store,
+    config: {
+      targets: { T2: t2.url, T0: t0.url },
+      retriesPerCredential: 10,
+      failureBodyDrainBytes: 1024,
+    },
+  });
+
+  try {
+    const count = 24;
+    const responses = await Promise.all(Array.from({ length: count }, (_unused, index) => (
+      fetch(`${proxy.url}/v1/messages`, {
+        method: "POST",
+        headers: {
+          authorization: "direct-user-key",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ model: "claude-haiku-4-5-20251001", index }),
+      })
+    )));
+    const bodies = await Promise.all(responses.map((res) => res.text()));
+
+    assert.deepEqual(responses.map((res) => res.status), Array(count).fill(200));
+    assert.deepEqual(bodies, Array(count).fill("ok"));
+    assert.equal(t2.requests.length, count);
+    assert.equal(t0.requests.length, 0);
+    assert.equal(store.state.completed.length, count);
+    assert.equal(store.state.completed.every((row) => row.ok), true);
+    assert.ok(maxActive > 1, `expected concurrent upstream requests, saw ${maxActive}`);
+  } finally {
+    await close(proxy.server);
+    await close(t2.server);
+    await close(t0.server);
+  }
+});
+
+test("postgres proxy store coalesces cached account lookups", async () => {
+  let accountQueries = 0;
+  const store = createPostgresProxyStore({
+    config: {
+      accountCacheMs: 1000,
+      accountCacheMax: 100,
+      keySecret: "test-secret",
+    },
+    async query(sql, params) {
+      assert.match(sql, /FROM accounts/);
+      assert.equal(params.length, 1);
+      accountQueries += 1;
+      await wait(30);
+      return { rows: [{ id: "acct_cached", created_at: new Date() }] };
+    },
+  });
+
+  const accounts = await Promise.all(Array.from({ length: 16 }, () => (
+    store.findAccountByApiKey("internal-key")
+  )));
+
+  assert.equal(accountQueries, 1);
+  assert.equal(accounts.every((account) => account?.id === "acct_cached"), true);
+  await store.findAccountByApiKey("internal-key");
+  assert.equal(accountQueries, 1);
+});
+
 test("internal account proxy rotates upstream keys by priority", async () => {
   const seenAuth = [];
   const t2 = await createUpstream((_req, res, record) => {
@@ -380,4 +464,11 @@ test("disabled proxy records and rejects requests before upstream attempts", asy
     await close(proxy.server);
     await close(t2.server);
   }
+});
+
+test("poller error extraction removes Postgres-unsafe NUL bytes", () => {
+  const message = "bad\u0000error";
+  const error = extractProbeError(500, JSON.stringify({ error: message }));
+  assert.equal(error.includes("\u0000"), false);
+  assert.match(error, /bad.error/);
 });

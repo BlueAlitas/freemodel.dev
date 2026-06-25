@@ -27,11 +27,13 @@
 
 import express from "express";
 import "dotenv/config";
+import cluster from "node:cluster";
+import { availableParallelism } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { createHash } from "node:crypto";
 
-import { init as dbInit, query } from "./db.js";
+import { close as dbClose, init as dbInit, query } from "./db.js";
 import * as poller from "./poller.js";
 import { createAdminAuth, registerAccountAndAdminRoutes, registerProxyRoutes } from "./proxy.js";
 
@@ -39,11 +41,38 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = parseInt(process.env.PORT ?? "3000", 10);
 const ACTIVE_WINDOW_MIN = parseInt(process.env.ACTIVE_WINDOW_MIN ?? "5", 10);
 const TRACK_PATHS = process.env.TRACK_PATHS ?? "/";     // comma-separated, prefix matches
+const IS_CLUSTER_WORKER = process.env.FM_CLUSTER_WORKER === "1";
+
+function envFlag(name, fallback = true) {
+  const value = process.env[name];
+  if (value == null || value === "") return fallback;
+  if (/^(1|true|yes|on)$/i.test(value)) return true;
+  if (/^(0|false|no|off)$/i.test(value)) return false;
+  return fallback;
+}
+
+function parseWorkerCount(value, fallback = 1) {
+  const raw = String(value ?? "").trim().toLowerCase();
+  if (!raw) return fallback;
+  if (raw === "auto") return Math.max(1, availableParallelism());
+  const parsed = parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+const WEB_CONCURRENCY = parseWorkerCount(
+  process.env.WEB_CONCURRENCY || process.env.NODE_WORKERS || process.env.WORKER_COUNT,
+  1
+);
+const POLLER_ENABLED = envFlag("POLLER_ENABLED", true);
 
 /* ---------- express ---------- */
 const app = express();
 app.disable("x-powered-by");
 app.set("trust proxy", true); // honour X-Forwarded-For from Traefik
+app.use((req, res, next) => {
+  res.setHeader("x-fm-worker", cluster.worker?.id ? String(cluster.worker.id) : "single");
+  next();
+});
 
 // Raw proxy routes must be registered before JSON parsing so requests can
 // be replayed across upstream retries without losing the original body.
@@ -235,13 +264,88 @@ async function history48(target, modelId) {
   }));
 }
 
+async function buildDbBackedPollerSnapshot(config, metaRows) {
+  const { rows: latestRows } = await query(`
+    SELECT DISTINCT ON (target, model)
+      target, model, ok, status, latency_ms, ts, error
+    FROM probes
+    WHERE target = ANY($1)
+    ORDER BY target, model, ts DESC
+  `, [config.targets]);
+  const latestByModel = new Map(latestRows.map((row) => [
+    `${row.target}\0${row.model}`,
+    {
+      ok: row.ok,
+      status: row.status,
+      latency: Number(row.latency_ms),
+      ts: new Date(row.ts).getTime(),
+      error: row.error,
+    },
+  ]));
+
+  const { rows: lastOkRows } = await query(`
+    SELECT target, MAX(EXTRACT(EPOCH FROM ts) * 1000)::bigint AS ts
+    FROM probes
+    WHERE target = ANY($1) AND ok = true
+    GROUP BY target
+  `, [config.targets]);
+  const lastOkByTarget = new Map(lastOkRows.map((row) => [row.target, Number(row.ts)]));
+
+  const { rows: lastRows } = await query(`
+    SELECT
+      MAX(EXTRACT(EPOCH FROM ts) * 1000)::bigint AS last_probe_at,
+      MAX(EXTRACT(EPOCH FROM ts) * 1000) FILTER (WHERE ok = true)::bigint AS last_ok_overall
+    FROM probes
+    WHERE target = ANY($1)
+  `, [config.targets]);
+  const lastProbeAt = lastRows[0]?.last_probe_at ? Number(lastRows[0].last_probe_at) : null;
+  const lastOkOverall = lastRows[0]?.last_ok_overall ? Number(lastRows[0].last_ok_overall) : null;
+
+  const { rows: streakRows } = await query(`
+    SELECT ok
+    FROM probes
+    WHERE target = ANY($1)
+    ORDER BY ts DESC, id DESC
+    LIMIT $2
+  `, [config.targets, config.healthyConfirmationRequests]);
+  let okProbeStreak = 0;
+  for (const row of streakRows) {
+    if (!row.ok) break;
+    okProbeStreak++;
+  }
+
+  return {
+    targets: config.targets.map((target) => ({
+      url: target,
+      lastModelRefresh: null,
+      lastOk: lastOkByTarget.get(target) || null,
+      models: metaRows
+        .filter((row) => row.target === target)
+        .map((row) => ({
+          id: row.id,
+          last: latestByModel.get(`${row.target}\0${row.id}`) || null,
+          history48: [],
+        })),
+    })),
+    lastOkOverall,
+    lastCheckAt: lastProbeAt,
+    lastProbeAt,
+    cycleCount: null,
+    okProbeStreak,
+    healthyConfirmationRequests: config.healthyConfirmationRequests,
+  };
+}
+
 async function buildStatusPayload() {
   const cfg = poller.getConfig();
-  const snap = poller.snapshot();
   const config = cfg;
 
   // Load model metadata (enabled, removed_at)
   const { rows: metaRows } = await query(`SELECT target, id, enabled, removed_at FROM models`);
+  let snap = poller.snapshot();
+  if (!snap.targets.some((target) => target.models.length) && metaRows.length) {
+    snap = await buildDbBackedPollerSnapshot(config, metaRows);
+  }
   const meta = new Map();
   for (const r of metaRows) {
     if (!meta.has(r.target)) meta.set(r.target, new Map());
@@ -351,7 +455,15 @@ app.get("/api/status", async (_req, res) => {
 app.get("/api/health", async (_req, res) => {
   try {
     await query("SELECT 1");
-    res.json({ ok: true, ts: Date.now() });
+    res.json({
+      ok: true,
+      ts: Date.now(),
+      worker: {
+        pid: process.pid,
+        id: cluster.worker?.id || null,
+        clustered: !!cluster.worker,
+      },
+    });
   } catch (e) {
     res.status(503).json({ ok: false, error: e.message });
   }
@@ -365,6 +477,9 @@ app.get("/api/config", (_req, res) => {
     modelRefreshMs: c.modelRefresh,
     testModels: c.testModels,
     targets: c.targets,
+    webConcurrency: WEB_CONCURRENCY,
+    pollerEnabled: POLLER_ENABLED,
+    workerId: cluster.worker?.id || null,
   });
 });
 
@@ -453,17 +568,75 @@ app.get("/api/visits/recent", adminAuth, async (req, res) => {
 });
 
 /* ---------- boot ---------- */
-(async () => {
+async function startWebServer({ startPoller = false } = {}) {
   await dbInit();
-  await poller.start();
-  app.listen(PORT, () => {
+  if (startPoller) await poller.start();
+
+  const server = app.listen(PORT, () => {
     const c = poller.getConfig();
-    console.log(`[status] listening on http://localhost:${PORT}`);
+    const workerLabel = cluster.worker ? `worker ${cluster.worker.id}` : "single";
+    console.log(`[status] ${workerLabel} listening on http://localhost:${PORT}`);
+    console.log(`[status] pid:        ${process.pid}`);
     console.log(`[status] targets:    ${c.targets.join(", ")}`);
     console.log(`[status] test models: ${c.testModels.join(", ")}`);
     console.log(`[status] active window: ${ACTIVE_WINDOW_MIN} min`);
   });
-})().catch(err => {
+
+  const shutdown = async (signal) => {
+    console.log(`[status] ${signal} received; shutting down pid ${process.pid}`);
+    poller.stop();
+    server.close(() => {
+      dbClose()
+        .catch((err) => console.warn("[db] close failed:", err.message))
+        .finally(() => process.exit(0));
+    });
+    setTimeout(() => process.exit(1), 30_000).unref();
+  };
+  process.once("SIGTERM", shutdown);
+  process.once("SIGINT", shutdown);
+}
+
+async function startClusterPrimary() {
+  cluster.schedulingPolicy = cluster.SCHED_RR;
+  await dbInit();
+
+  let shuttingDown = false;
+  const forkWorker = () => cluster.fork({ ...process.env, FM_CLUSTER_WORKER: "1" });
+  cluster.on("exit", (worker, code, signal) => {
+    console.warn(`[status] worker ${worker.id} exited code=${code ?? "null"} signal=${signal ?? "null"}`);
+    if (!shuttingDown) forkWorker();
+  });
+  const shutdown = async (signal) => {
+    shuttingDown = true;
+    console.log(`[status] ${signal} received; stopping primary ${process.pid}`);
+    poller.stop();
+    const forceExit = setTimeout(() => {
+      for (const worker of Object.values(cluster.workers)) worker?.kill("SIGTERM");
+      process.exit(1);
+    }, 10_000);
+    forceExit.unref();
+    cluster.disconnect(async () => {
+      clearTimeout(forceExit);
+      await dbClose().catch((err) => console.warn("[db] close failed:", err.message));
+      process.exit(0);
+    });
+  };
+  process.once("SIGTERM", shutdown);
+  process.once("SIGINT", shutdown);
+
+  for (let i = 0; i < WEB_CONCURRENCY; i++) forkWorker();
+  console.log(`[status] primary ${process.pid} started ${WEB_CONCURRENCY} web workers`);
+  console.log(`[status] poller: ${POLLER_ENABLED ? "enabled in primary" : "disabled"}`);
+
+  if (POLLER_ENABLED) await poller.start();
+}
+
+const shouldUseCluster = WEB_CONCURRENCY > 1 && cluster.isPrimary;
+
+(shouldUseCluster
+  ? startClusterPrimary()
+  : startWebServer({ startPoller: POLLER_ENABLED && !IS_CLUSTER_WORKER })
+).catch(err => {
   console.error("[boot] fatal:", err);
   process.exit(1);
 });

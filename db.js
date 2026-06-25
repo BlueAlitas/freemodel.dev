@@ -17,10 +17,21 @@ if (!DATABASE_URL) {
   process.exit(1);
 }
 
-// Pool tuned for a low-traffic status page: small cap, short idle timeout.
+function positiveIntEnv(keys, fallback) {
+  for (const key of keys) {
+    const value = parseInt(process.env[key] ?? "", 10);
+    if (Number.isFinite(value) && value > 0) return value;
+  }
+  return fallback;
+}
+
+const POOL_MAX = positiveIntEnv(["POSTGRES_POOL_MAX", "DATABASE_POOL_MAX", "PGPOOL_MAX"], 20);
+
+// Shared pool sized for proxy traffic. Tune POSTGRES_POOL_MAX to match the
+// database connection budget and the number of app replicas.
 export const pool = new Pool({
   connectionString: DATABASE_URL,
-  max: 8,
+  max: POOL_MAX,
   idleTimeoutMillis: 30_000,
   connectionTimeoutMillis: 10_000,
   application_name: "freemodel-status",
@@ -145,6 +156,12 @@ CREATE INDEX IF NOT EXISTS proxy_requests_started_at_idx
   ON proxy_requests (started_at DESC);
 CREATE INDEX IF NOT EXISTS proxy_requests_account_idx
   ON proxy_requests (account_id, started_at DESC);
+CREATE INDEX IF NOT EXISTS proxy_requests_completed_at_idx
+  ON proxy_requests (completed_at DESC) WHERE completed_at IS NOT NULL;
+CREATE INDEX IF NOT EXISTS proxy_requests_account_completed_idx
+  ON proxy_requests (account_id, completed_at DESC) WHERE completed_at IS NOT NULL;
+CREATE INDEX IF NOT EXISTS proxy_requests_active_started_idx
+  ON proxy_requests (started_at DESC) WHERE completed_at IS NULL;
 
 CREATE TABLE IF NOT EXISTS proxy_attempts (
   id             BIGSERIAL   PRIMARY KEY,

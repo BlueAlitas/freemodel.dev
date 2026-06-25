@@ -258,13 +258,18 @@ Bad (English title for a Korean session): {"title": "Refactor payment module"}`,
   };
 }
 
+function sanitizeText(s) {
+  return String(s ?? "").replace(/\u0000/g, "\uFFFD");
+}
+
 function clipText(s, max = 240) {
-  if (!s) return "";
-  return s.length > max ? s.slice(0, max - 1) + "…" : s;
+  const text = sanitizeText(s);
+  if (!text) return "";
+  return text.length > max ? text.slice(0, max - 1) + "…" : text;
 }
 
 function normalizeWhitespace(s) {
-  return String(s || "").replace(/\s+/g, " ").trim();
+  return sanitizeText(s).replace(/\s+/g, " ").trim();
 }
 
 function stripHtml(s) {
@@ -356,7 +361,7 @@ async function probe(target, model) {
       status: 0,
       latency: performance.now() - start,
       ts: Date.now(),
-      error: String(err?.name || err?.message || err),
+      error: clipText(err?.name || err?.message || err),
     };
   } finally {
     clearTimeout(timer);
@@ -399,14 +404,14 @@ async function runCycle() {
         await client.query(
           `INSERT INTO probes (target, model, ok, status, latency_ms, ts, error)
            VALUES ($1, $2, $3, $4, $5, to_timestamp($6 / 1000.0), $7)`,
-          [target, r.modelId, r.ok, r.status, r.latency, r.ts, r.error ?? null]
+          [target, r.modelId, r.ok, r.status, r.latency, r.ts, r.error ? clipText(r.error) : null]
         );
         pushHistory(target, r.modelId, {
           ok: r.ok,
           status: r.status,
           latency: r.latency,
           ts: r.ts,
-          error: r.error ?? null,
+          error: r.error ? clipText(r.error) : null,
         });
         if (r.ok) {
           if (!lastOkByTarget[target] || r.ts > lastOkByTarget[target]) {

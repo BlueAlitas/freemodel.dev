@@ -38,6 +38,7 @@
     padding: 8px 11px;
     cursor: pointer;
   }
+  button:disabled { opacity: .6; cursor: wait; }
   button.primary { background: #0b3a25; border-color: #145c3d; color: #d1fae5; }
   button.danger { background: #3f1518; border-color: #6b2028; color: #fecaca; }
   input {
@@ -184,6 +185,8 @@
       <h2>Controls</h2>
       <button id="toggleProxy">Toggle proxy</button>
       <span id="avgLatency" class="pill">avg - ms</span>
+      <span id="refreshState" class="pill">auto 15s</span>
+      <span id="lastUpdated" class="pill">updated -</span>
     </section>
 
     <section class="panel">
@@ -215,7 +218,9 @@
 
 <script>
 const $ = (id) => document.getElementById(id);
+const AUTO_REFRESH_MS = 15000;
 let overview = null;
+let loading = false;
 
 function showNotice(text, type = "ok") {
   const el = $("notice");
@@ -247,6 +252,16 @@ function fmtDate(value) {
 
 function fmtMs(value) {
   return value == null ? "-" : `${Math.round(value).toLocaleString()} ms`;
+}
+
+function fmtTime(value) {
+  return value ? new Date(value).toLocaleTimeString() : "-";
+}
+
+function setPill(id, text, type = "") {
+  const el = $(id);
+  el.textContent = text;
+  el.className = `pill ${type}`.trim();
 }
 
 function esc(value) {
@@ -353,6 +368,7 @@ function render(data) {
   $("ok24").textContent = (data.totals24h.ok || 0).toLocaleString();
   $("fail24").textContent = (data.totals24h.failed || 0).toLocaleString();
   $("avgLatency").textContent = `avg ${fmtMs(data.totals24h.avgLatencyMs)}`;
+  $("lastUpdated").textContent = `updated ${fmtTime(data.generatedAt || Date.now())}`;
   $("toggleProxy").textContent = data.system.proxyEnabled ? "Disable proxy" : "Enable proxy";
   renderCharts(data);
   $("activeTable").innerHTML = requestTable(data.active || [], true);
@@ -360,15 +376,30 @@ function render(data) {
   $("accountsTable").innerHTML = accountTable(data.accounts || []);
 }
 
-async function load() {
-  const data = await api("/api/admin/overview");
-  render(data);
-  showNotice("Admin data loaded.");
+async function load({ quiet = false } = {}) {
+  if (loading) return;
+  loading = true;
+  $("refresh").disabled = true;
+  setPill("refreshState", "refreshing");
+  try {
+    const data = await api("/api/admin/overview");
+    render(data);
+    setPill("refreshState", `auto ${Math.round(AUTO_REFRESH_MS / 1000)}s`);
+    if (!quiet) showNotice("Admin data loaded.");
+  } catch (err) {
+    setPill("refreshState", "refresh failed", "bad");
+    if (!quiet) showNotice(err.message, "bad");
+    throw err;
+  } finally {
+    loading = false;
+    $("refresh").disabled = false;
+  }
 }
 
 $("saveToken").addEventListener("click", () => {
   localStorage.setItem("fm_admin_token", token());
   showNotice("Token saved.");
+  if (token()) load().catch((err) => showNotice(err.message, "bad"));
 });
 
 $("refresh").addEventListener("click", () => {
@@ -414,8 +445,12 @@ $("accountsTable").addEventListener("click", async (event) => {
 $("adminToken").value = localStorage.getItem("fm_admin_token") || "";
 if ($("adminToken").value) load().catch((err) => showNotice(err.message, "bad"));
 setInterval(() => {
-  if (token()) load().catch(() => {});
-}, 15000);
+  if (!token() || document.hidden) return;
+  load({ quiet: true }).catch(() => {});
+}, AUTO_REFRESH_MS);
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden && token()) load({ quiet: true }).catch(() => {});
+});
 </script>
 </body>
 </html>

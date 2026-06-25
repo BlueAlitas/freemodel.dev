@@ -49,6 +49,11 @@ const intEnv = (env, key, fallback) => {
   return Number.isFinite(value) && value > 0 ? value : fallback;
 };
 
+const nonNegativeIntEnv = (env, key, fallback) => {
+  const value = parseInt(env[key] ?? "", 10);
+  return Number.isFinite(value) && value >= 0 ? value : fallback;
+};
+
 const normalizeBaseUrl = (value) => String(value || "").trim().replace(/\/+$/, "");
 
 export function getProxyConfig(env = process.env) {
@@ -60,6 +65,8 @@ export function getProxyConfig(env = process.env) {
     retriesPerCredential: intEnv(env, "PROXY_RETRIES_PER_CREDENTIAL", 10),
     bodyLimit: env.PROXY_BODY_LIMIT || "20mb",
     failureBodyDrainBytes: intEnv(env, "PROXY_FAILURE_DRAIN_BYTES", 64 * 1024),
+    accountCacheMs: nonNegativeIntEnv(env, "PROXY_ACCOUNT_CACHE_MS", 5000),
+    accountCacheMax: intEnv(env, "PROXY_ACCOUNT_CACHE_MAX", 10000),
     adminToken: env.ADMIN_TOKEN || "",
     keySecret: env.PROXY_KEY_SECRET || env.ADMIN_TOKEN || "",
   };
@@ -346,8 +353,39 @@ function publicActiveRequest(active) {
 
 export const activeProxyRequests = new Map();
 
+async function readThroughCache(cache, key, { ttlMs, maxEntries }, loader) {
+  if (ttlMs > 0) {
+    const cached = cache.get(key);
+    if (cached && cached.expiresAt > Date.now()) return cached.value;
+  }
+
+  if (ttlMs > 0) {
+    if (!cache.has(key) && cache.size >= maxEntries) {
+      const oldestKey = cache.keys().next().value;
+      if (oldestKey !== undefined) cache.delete(oldestKey);
+    }
+  }
+
+  const pending = Promise.resolve().then(loader);
+  if (ttlMs > 0) cache.set(key, { value: pending, expiresAt: Date.now() + ttlMs });
+  try {
+    const value = await pending;
+    if (ttlMs > 0) cache.set(key, { value, expiresAt: Date.now() + ttlMs });
+    return value;
+  } catch (err) {
+    if (ttlMs > 0) cache.delete(key);
+    throw err;
+  }
+}
+
 export function createPostgresProxyStore({ query, config = getProxyConfig() }) {
   if (typeof query !== "function") throw new Error("query function is required");
+  const cacheOptions = {
+    ttlMs: config.accountCacheMs ?? 0,
+    maxEntries: Math.max(1, config.accountCacheMax ?? 10000),
+  };
+  const accountByKeyHashCache = new Map();
+  const upstreamKeysByAccountCache = new Map();
 
   return {
     async isProxyEnabled() {
@@ -360,28 +398,33 @@ export function createPostgresProxyStore({ query, config = getProxyConfig() }) {
     async findAccountByApiKey(token) {
       const clean = extractAuthorizationToken(token);
       if (!clean) return null;
-      const { rows } = await query(
-        `SELECT id, created_at FROM accounts WHERE api_key_hash = $1`,
-        [tokenHash(clean)]
-      );
-      return rows[0] || null;
+      const hash = tokenHash(clean);
+      return readThroughCache(accountByKeyHashCache, hash, cacheOptions, async () => {
+        const { rows } = await query(
+          `SELECT id, created_at FROM accounts WHERE api_key_hash = $1`,
+          [hash]
+        );
+        return rows[0] || null;
+      });
     },
 
     async getAccountUpstreamKeys(accountId) {
-      const { rows } = await query(`
-        SELECT id, tier, priority, enabled, key_ciphertext, created_at
-        FROM account_upstream_keys
-        WHERE account_id = $1 AND enabled = true
-        ORDER BY CASE WHEN tier = 'T2' THEN 0 ELSE 1 END, priority ASC, created_at ASC
-      `, [accountId]);
-      return rows.map((r) => ({
-        id: r.id,
-        tier: r.tier,
-        priority: r.priority,
-        enabled: r.enabled,
-        createdAt: r.created_at,
-        apiKey: decryptSecret(r.key_ciphertext, config.keySecret),
-      }));
+      return readThroughCache(upstreamKeysByAccountCache, accountId, cacheOptions, async () => {
+        const { rows } = await query(`
+          SELECT id, tier, priority, enabled, key_ciphertext, created_at
+          FROM account_upstream_keys
+          WHERE account_id = $1 AND enabled = true
+          ORDER BY CASE WHEN tier = 'T2' THEN 0 ELSE 1 END, priority ASC, created_at ASC
+        `, [accountId]);
+        return rows.map((r) => ({
+          id: r.id,
+          tier: r.tier,
+          priority: r.priority,
+          enabled: r.enabled,
+          createdAt: r.created_at,
+          apiKey: decryptSecret(r.key_ciphertext, config.keySecret),
+        }));
+      });
     },
 
     async createProxyRequest(row) {
@@ -758,6 +801,15 @@ function proxyRequestRow(row) {
   };
 }
 
+function activeProxyRequestRow(row) {
+  const request = proxyRequestRow(row);
+  return {
+    ...request,
+    status: "active",
+    current: null,
+  };
+}
+
 function successRate(ok, total) {
   return total ? +((ok / total) * 100).toFixed(2) : null;
 }
@@ -1093,8 +1145,17 @@ export function registerAccountAndAdminRoutes(app, { query, config = getProxyCon
   app.get("/api/admin/overview", admin, async (req, res) => {
     try {
       const limit = Math.min(200, Math.max(1, parseInt(req.query.limit || "80", 10)));
-      const [{ rows: settingRows }, { rows: recentRows }, { rows: totalRows }, { rows: byStatusRows }, { rows: byTierRows }, { rows: accountRows }] = await Promise.all([
+      const [{ rows: settingRows }, { rows: activeRows }, { rows: recentRows }, { rows: totalRows }, { rows: byStatusRows }, { rows: byTierRows }, { rows: accountRows }] = await Promise.all([
         query(`SELECT value FROM system_settings WHERE key = 'proxy_enabled'`),
+        query(`
+          SELECT id, account_id, method, route_path, request_model, ok, final_status,
+                 latency_ms, attempts, upstream_tier, upstream_url, error,
+                 streamed, started_at, completed_at
+          FROM proxy_requests
+          WHERE completed_at IS NULL
+          ORDER BY started_at DESC
+          LIMIT 100
+        `),
         query(`
           SELECT id, account_id, method, route_path, request_model, ok, final_status,
                  latency_ms, attempts, upstream_tier, upstream_url, error,
@@ -1154,13 +1215,19 @@ export function registerAccountAndAdminRoutes(app, { query, config = getProxyCon
         `),
       ]);
 
+      const localActive = [...activeProxyRequests.values()];
+      const localActiveIds = new Set(localActive.map((row) => row.id));
       res.set("cache-control", "no-store");
       res.json({
+        generatedAt: Date.now(),
         system: {
           proxyEnabled: settingRows[0]?.value !== "false",
           adminConfigured: !!config.adminToken,
         },
-        active: [...activeProxyRequests.values()],
+        active: [
+          ...localActive,
+          ...activeRows.map(activeProxyRequestRow).filter((row) => !localActiveIds.has(row.id)),
+        ],
         recent: recentRows.map(proxyRequestRow),
         totals24h: {
           requests: totalRows[0]?.requests ?? 0,
