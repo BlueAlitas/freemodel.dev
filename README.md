@@ -111,6 +111,7 @@ Admin API access uses `ADMIN_TOKEN` through `x-admin-token`, `Authorization`, or
 | `PROXY_RETRIES_PER_CREDENTIAL` | `10` | Attempts per direct key, stored account key, or tier. |
 | `PROXY_BODY_LIMIT` | `20mb` | Max buffered request body for retryable proxy requests. |
 | `PROXY_FAILURE_DRAIN_BYTES` | `65536` | Max failed-response bytes drained before retrying another upstream attempt. |
+| `PROXY_SUCCESS_BUFFER_BYTES` | `0` | When greater than `0`, fully buffers successful upstream responses up to this byte limit before sending them downstream, allowing terminated 2xx streams to be retried. |
 | `PROXY_ACCOUNT_CACHE_MS` | `5000` | Short cache for internal API-key and stored upstream-key lookups. Set `0` to disable. |
 | `PROXY_ACCOUNT_CACHE_MAX` | `10000` | Max cached account/key entries per app process. |
 | `ADMIN_TOKEN` | _(empty)_ | Required token for `/api/admin/*`. |

@@ -281,6 +281,157 @@ test("proxy strips stale content-encoding after upstream decompression", async (
   }
 });
 
+test("proxy records upstream stream termination without crashing", async () => {
+  const t2 = await createUpstream(async (_req, res) => {
+    res.writeHead(200, { "content-type": "text/event-stream" });
+    res.flushHeaders();
+    res.write("event: message_start\ndata: {}\n\n");
+    await wait(20);
+    res.destroy(new Error("upstream dropped stream"));
+  });
+  const t0 = await createUpstream((_req, res) => {
+    res.writeHead(500);
+    res.end();
+  });
+  const store = createMemoryStore();
+  const proxy = await createProxyServer({
+    store,
+    config: {
+      targets: { T2: t2.url, T0: t0.url },
+      retriesPerCredential: 1,
+      failureBodyDrainBytes: 1024,
+    },
+  });
+
+  try {
+    const res = await fetch(`${proxy.url}/v1/messages`, {
+      method: "POST",
+      headers: {
+        authorization: "direct-user-key",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ model: "claude-haiku-4-5-20251001", stream: true }),
+    });
+
+    assert.equal(res.status, 200);
+    await assert.rejects(() => res.text());
+    assert.equal(store.state.completed.length, 1);
+    assert.equal(store.state.completed[0].ok, false);
+    assert.equal(store.state.completed[0].streamed, true);
+    assert.match(store.state.completed[0].error, /terminated|aborted|closed/i);
+  } finally {
+    await close(proxy.server);
+    await close(t2.server);
+    await close(t0.server);
+  }
+});
+
+test("buffered proxy retries a terminated 200 response before sending downstream", async () => {
+  let calls = 0;
+  const t2 = await createUpstream(async (_req, res) => {
+    calls += 1;
+    res.writeHead(200, { "content-type": "text/event-stream" });
+    if (calls === 1) {
+      res.flushHeaders();
+      res.write("event: message_start\ndata: {}\n\n");
+      await wait(20);
+      res.destroy(new Error("upstream dropped stream"));
+      return;
+    }
+    res.end("event: message\ndata: ok\n\n");
+  });
+  const t0 = await createUpstream((_req, res) => {
+    res.writeHead(500);
+    res.end();
+  });
+  const store = createMemoryStore();
+  const proxy = await createProxyServer({
+    store,
+    config: {
+      targets: { T2: t2.url, T0: t0.url },
+      retriesPerCredential: 2,
+      failureBodyDrainBytes: 1024,
+      successBodyBufferBytes: 1024 * 1024,
+    },
+  });
+
+  try {
+    const res = await fetch(`${proxy.url}/v1/messages`, {
+      method: "POST",
+      headers: {
+        authorization: "direct-user-key",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ model: "claude-haiku-4-5-20251001", stream: true }),
+    });
+    const text = await res.text();
+
+    assert.equal(res.status, 200);
+    assert.equal(text, "event: message\ndata: ok\n\n");
+    assert.equal(t2.requests.length, 2);
+    assert.equal(store.state.attempts.length, 2);
+    assert.equal(store.state.attempts[0].status, 200);
+    assert.equal(store.state.attempts[0].ok, false);
+    assert.match(store.state.attempts[0].error, /terminated|aborted|closed/i);
+    assert.equal(store.state.attempts[1].ok, true);
+    assert.equal(store.state.completed[0].ok, true);
+  } finally {
+    await close(proxy.server);
+    await close(t2.server);
+    await close(t0.server);
+  }
+});
+
+test("proxy stops retrying when downstream client disconnects", async () => {
+  let calls = 0;
+  const t2 = await createUpstream(async (_req, res) => {
+    calls += 1;
+    await wait(100);
+    res.writeHead(503, { "content-type": "text/plain" });
+    res.end("unavailable");
+  });
+  const t0 = await createUpstream((_req, res) => {
+    res.writeHead(500);
+    res.end();
+  });
+  const store = createMemoryStore();
+  const proxy = await createProxyServer({
+    store,
+    config: {
+      targets: { T2: t2.url, T0: t0.url },
+      retriesPerCredential: 50,
+      failureBodyDrainBytes: 1024,
+      successBodyBufferBytes: 1024 * 1024,
+    },
+  });
+
+  try {
+    const ctrl = new AbortController();
+    const request = fetch(`${proxy.url}/v1/messages`, {
+      method: "POST",
+      headers: {
+        authorization: "direct-user-key",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ model: "claude-haiku-4-5-20251001", stream: true }),
+      signal: ctrl.signal,
+    });
+    await wait(20);
+    ctrl.abort();
+    await assert.rejects(() => request);
+    await wait(80);
+
+    assert.equal(store.state.completed.length, 1);
+    assert.equal(store.state.completed[0].ok, false);
+    assert.equal(store.state.completed[0].status, 499);
+    assert.ok(calls < 50, `expected retries to stop after abort, saw ${calls}`);
+  } finally {
+    await close(proxy.server);
+    await close(t2.server);
+    await close(t0.server);
+  }
+});
+
 test("proxy handles many requests concurrently", async () => {
   let active = 0;
   let maxActive = 0;

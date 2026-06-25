@@ -7,8 +7,6 @@ import {
   timingSafeEqual,
 } from "node:crypto";
 import { performance } from "node:perf_hooks";
-import { Readable } from "node:stream";
-import { pipeline } from "node:stream/promises";
 
 const DEFAULT_TARGETS = {
   T2: "https://api-cc.freemodel.dev",
@@ -65,6 +63,7 @@ export function getProxyConfig(env = process.env) {
     retriesPerCredential: intEnv(env, "PROXY_RETRIES_PER_CREDENTIAL", 10),
     bodyLimit: env.PROXY_BODY_LIMIT || "20mb",
     failureBodyDrainBytes: intEnv(env, "PROXY_FAILURE_DRAIN_BYTES", 64 * 1024),
+    successBodyBufferBytes: nonNegativeIntEnv(env, "PROXY_SUCCESS_BUFFER_BYTES", 0),
     accountCacheMs: nonNegativeIntEnv(env, "PROXY_ACCOUNT_CACHE_MS", 5000),
     accountCacheMax: intEnv(env, "PROXY_ACCOUNT_CACHE_MAX", 10000),
     adminToken: env.ADMIN_TOKEN || "",
@@ -261,7 +260,30 @@ async function drainFailureBody(response, maxBytes) {
   }
 }
 
-async function fetchAttempt({ req, rawBody, path, step, fetchImpl, config }) {
+async function readSuccessfulBody(response, maxBytes) {
+  if (!response.body) return Buffer.alloc(0);
+  const reader = response.body.getReader();
+  const chunks = [];
+  let seen = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value?.byteLength) continue;
+      seen += value.byteLength;
+      if (seen > maxBytes) {
+        await reader.cancel();
+        throw new Error(`Successful response exceeded ${maxBytes} byte buffer limit`);
+      }
+      chunks.push(Buffer.from(value));
+    }
+    return Buffer.concat(chunks, seen);
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+async function fetchAttempt({ req, rawBody, path, step, fetchImpl, config, signal }) {
   const upstreamUrl = new URL(path, step.upstreamBaseUrl).toString();
   const started = performance.now();
   try {
@@ -269,6 +291,7 @@ async function fetchAttempt({ req, rawBody, path, step, fetchImpl, config }) {
       method: req.method,
       headers: buildUpstreamHeaders(req, step.token),
       redirect: "manual",
+      signal,
     };
     if (!NO_BODY_METHODS.has(req.method.toUpperCase())) {
       options.body = rawBody;
@@ -290,15 +313,33 @@ async function fetchAttempt({ req, rawBody, path, step, fetchImpl, config }) {
       };
     }
 
+    let body = null;
+    if (config.successBodyBufferBytes > 0) {
+      try {
+        body = await readSuccessfulBody(response, config.successBodyBufferBytes);
+      } catch (err) {
+        return {
+          ok: false,
+          status: response.status,
+          latencyMs: performance.now() - started,
+          error: clip(err?.message || err?.name || err),
+          tier: step.tier,
+          upstreamUrl,
+          accountKeyId: step.accountKeyId,
+        };
+      }
+    }
+
     return {
       ok: true,
       status: response.status,
-      latencyMs: headerLatency,
+      latencyMs: config.successBodyBufferBytes > 0 ? performance.now() - started : headerLatency,
       error: null,
       tier: step.tier,
       upstreamUrl,
       accountKeyId: step.accountKeyId,
       response,
+      body,
     };
   } catch (err) {
     return {
@@ -328,12 +369,65 @@ function writeProxyResponseHeaders(upstream, downstream, requestId) {
 }
 
 async function streamUpstreamResponse(upstream, downstream, requestId) {
-  writeProxyResponseHeaders(upstream, downstream, requestId);
+  if (Buffer.isBuffer(upstream.body)) {
+    writeProxyResponseHeaders(upstream.response, downstream, requestId);
+    downstream.end(upstream.body);
+    return;
+  }
+
+  upstream = upstream.response || upstream;
   if (!upstream.body) {
+    writeProxyResponseHeaders(upstream, downstream, requestId);
     downstream.end();
     return;
   }
-  await pipeline(Readable.fromWeb(upstream.body), downstream);
+
+  const reader = upstream.body.getReader();
+  let headersWritten = false;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (!headersWritten) {
+        writeProxyResponseHeaders(upstream, downstream, requestId);
+        headersWritten = true;
+      }
+      if (done) break;
+      if (!value?.byteLength) continue;
+      await writeDownstreamChunk(downstream, value);
+    }
+    if (!downstream.destroyed && !downstream.writableEnded) downstream.end();
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+function writeDownstreamChunk(downstream, chunk) {
+  if (downstream.destroyed || downstream.writableEnded) {
+    throw new Error("Downstream closed");
+  }
+  if (downstream.write(Buffer.from(chunk))) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const cleanup = () => {
+      downstream.off("drain", onDrain);
+      downstream.off("error", onError);
+      downstream.off("close", onClose);
+    };
+    const onDrain = () => {
+      cleanup();
+      resolve();
+    };
+    const onError = (err) => {
+      cleanup();
+      reject(err);
+    };
+    const onClose = () => {
+      cleanup();
+      reject(new Error("Downstream closed"));
+    };
+    downstream.once("drain", onDrain);
+    downstream.once("error", onError);
+    downstream.once("close", onClose);
+  });
 }
 
 function publicActiveRequest(active) {
@@ -524,6 +618,13 @@ export function createProxyMiddleware({
     let rowCreated = false;
     let attemptNo = 0;
     let lastAttempt = null;
+    const downstreamAbort = new AbortController();
+
+    res.on("close", () => {
+      if (!res.writableEnded && !downstreamAbort.signal.aborted) {
+        downstreamAbort.abort(new Error("Downstream closed"));
+      }
+    });
 
     const touch = (status, current = active.current) => {
       active.status = status;
@@ -544,6 +645,12 @@ export function createProxyMiddleware({
         error: update.error || null,
         streamed: !!update.streamed,
       });
+    };
+
+    const throwIfDownstreamClosed = () => {
+      if (downstreamAbort.signal.aborted) {
+        throw downstreamAbort.signal.reason || new Error("Downstream closed");
+      }
     };
 
     try {
@@ -591,6 +698,7 @@ export function createProxyMiddleware({
 
       for (const step of plan) {
         for (let i = 0; i < step.maxAttempts; i++) {
+          throwIfDownstreamClosed();
           attemptNo += 1;
           touch("attempting", {
             attemptNo,
@@ -606,8 +714,10 @@ export function createProxyMiddleware({
             step,
             fetchImpl,
             config,
+            signal: downstreamAbort.signal,
           });
           lastAttempt = attempt;
+          throwIfDownstreamClosed();
 
           const attemptPublic = {
             attemptNo,
@@ -636,7 +746,7 @@ export function createProxyMiddleware({
 
           if (attempt.ok) {
             try {
-              await streamUpstreamResponse(attempt.response, res, requestId);
+              await streamUpstreamResponse(attempt, res, requestId);
               await complete({
                 ok: true,
                 status: attempt.status,
@@ -646,15 +756,24 @@ export function createProxyMiddleware({
               });
               touch("completed", attemptPublic);
             } catch (err) {
+              const message = clip(err?.message || err?.name || err);
               await complete({
                 ok: false,
                 status: attempt.status || 502,
                 upstreamTier: attempt.tier,
                 upstreamUrl: attempt.upstreamUrl,
-                error: clip(err?.message || err?.name || err),
+                error: message,
                 streamed: true,
               });
               touch("stream_error", attemptPublic);
+              if (!res.headersSent) {
+                res.status(502).set("cache-control", "no-store").json({
+                  error: "upstream_stream_error",
+                  requestId,
+                });
+              } else if (!res.writableEnded && !res.destroyed) {
+                res.destroy(err);
+              }
             }
             return;
           }
@@ -685,6 +804,17 @@ export function createProxyMiddleware({
       });
     } catch (err) {
       const message = clip(err?.message || err?.name || err);
+      const downstreamClosed = downstreamAbort.signal.aborted;
+      if (downstreamClosed) {
+        touch("client_closed", { error: message });
+        try {
+          await complete({ ok: false, status: 499, error: message || "Downstream closed" });
+        } catch (completeErr) {
+          console.warn("[proxy] failed to record client close:", completeErr.message);
+        }
+        return;
+      }
+
       touch("error", { error: message });
       try {
         await complete({ ok: false, status: 500, error: message });
