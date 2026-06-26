@@ -316,6 +316,14 @@
   .model .spark .b.down { background: var(--down); }
 
   /* ─── Probe chart ─────────────────────────────────────────── */
+  .probe-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 16px;
+    margin-bottom: 18px;
+  }
+  @media (max-width: 700px) { .probe-cards { grid-template-columns: 1fr; } }
+
   .probe-card {
     background: var(--bg-card);
     border: 1px solid var(--line);
@@ -323,6 +331,7 @@
     padding: 16px 18px;
     margin-bottom: 18px;
   }
+  .probe-cards .probe-card { margin-bottom: 0; min-width: 0; }
   .probe-head {
     display: flex; align-items: flex-start; justify-content: space-between;
     margin-bottom: 10px;
@@ -505,21 +514,7 @@
       </div>
     </div>
 
-    <div class="probe-card">
-      <div class="probe-head">
-        <div>
-          <div class="h">freemodel.dev model probes</div>
-          <div class="sub" id="probeSummary">Awaiting first probe cycle.</div>
-        </div>
-        <div class="legend" aria-hidden="true">
-          <span class="ok"><i></i>ok</span>
-          <span class="warn"><i></i>slow</span>
-          <span class="bad"><i></i>very slow</span>
-          <span class="down"><i></i>failed</span>
-        </div>
-      </div>
-      <div class="probe-chart" id="probeChart" role="img" aria-label="Recent model probe status chart"></div>
-    </div>
+    <div class="probe-cards" id="probeCards" aria-label="Provider model probe charts"></div>
 
     <div id="targets"></div>
 
@@ -577,6 +572,7 @@ const STATUS_WORD = {
   unknown: "Awaiting probes…",
 };
 const fmtMs = (n) => n == null ? "—" : Math.round(n).toLocaleString();
+const fmtPct = (n) => n == null ? "—" : `${n.toFixed(1)}%`;
 const fmtRel = (ts) => {
   if (!ts) return "—";
   const d = Math.max(0, Math.round((Date.now() - ts) / 1000));
@@ -609,6 +605,19 @@ const clip = (value, max = 180) => {
 };
 const hostOf = (url) => {
   try { return new URL(url).hostname; } catch { return url || "unknown"; }
+};
+const providerTier = (url) => {
+  const host = hostOf(url).toLowerCase();
+  if (host === "api-cc.freemodel.dev" || host.startsWith("api-cc.")) return "T2";
+  if (host === "cc.freemodel.dev" || host.startsWith("cc.")) return "T0";
+  return "Provider";
+};
+const targetUptime24 = (target) => {
+  const values = (target.models || [])
+    .filter(m => m.enabled && !m.removedAt && Number.isFinite(m.uptime24))
+    .map(m => m.uptime24);
+  if (!values.length) return null;
+  return values.reduce((sum, n) => sum + n, 0) / values.length;
 };
 
 function probeState(h) {
@@ -691,7 +700,7 @@ function render(data) {
   $("p90").textContent = fmtMs(q(0.90));
   $("p99").textContent = fmtMs(q(0.99));
 
-  renderProbeChart(data);
+  renderProbeCharts(data);
 
   // Per-target sections
   $("targets").innerHTML = data.targets.map(t => {
@@ -739,6 +748,7 @@ function render(data) {
           </div>
           <div class="target-meta">
             <span>status <b>${esc(statusLabel)}</b></span>
+            <span>uptime24 <b>${fmtPct(targetUptime24(t))}</b></span>
             <span>last&nbsp;ok <b>${t.lastOk ? fmtRel(t.lastOk) : "—"}</b></span>
             <span>probed <b>${t.lastCycleAt ? fmtRel(t.lastCycleAt) : "—"}</b></span>
           </div>
@@ -774,45 +784,99 @@ function paintCountdown(data) {
   }
 }
 
-function renderProbeChart(data) {
+function probeLegend() {
+  return `
+    <div class="legend" aria-hidden="true">
+      <span class="ok"><i></i>ok</span>
+      <span class="warn"><i></i>slow</span>
+      <span class="bad"><i></i>very slow</span>
+      <span class="down"><i></i>failed</span>
+    </div>`;
+}
+
+function probePointsForTarget(target) {
   const points = [];
-  for (const t of data.targets || []) {
-    for (const m of t.models || []) {
-      if (!m.enabled || m.removedAt) continue;
-      for (const h of m.history48 || []) {
-        points.push({
-          ...h,
-          target: t.url,
-          model: m.id,
-          state: probeState(h),
-        });
-      }
+  for (const m of target.models || []) {
+    if (!m.enabled || m.removedAt) continue;
+    for (const h of m.history48 || []) {
+      points.push({
+        ...h,
+        target: target.url,
+        model: m.id,
+        state: probeState(h),
+      });
     }
   }
+  return points.sort((a, b) => a.ts - b.ts);
+}
 
-  points.sort((a, b) => a.ts - b.ts);
-  const recent = points.slice(-96);
+function renderProviderProbeCard(target) {
+  const tier = providerTier(target.url);
+  const host = hostOf(target.url);
+  const uptime = fmtPct(targetUptime24(target));
+  const recent = probePointsForTarget(target).slice(-96);
   if (!recent.length) {
-    $("probeSummary").textContent = "Awaiting first probe cycle.";
-    $("probeChart").innerHTML = `<div class="empty">No probe results yet.</div>`;
-    return;
+    return `
+      <div class="probe-card">
+        <div class="probe-head">
+          <div>
+            <div class="h">${esc(tier)} model probes</div>
+            <div class="sub">${esc(host)} · uptime24 ${uptime} · awaiting first probe cycle.</div>
+          </div>
+          ${probeLegend()}
+        </div>
+        <div class="probe-chart" role="img" aria-label="${esc(tier)} recent model probe status chart">
+          <div class="empty">No probe results yet.</div>
+        </div>
+      </div>`;
   }
 
   const ok = recent.filter(p => p.ok).length;
   const failed = recent.length - ok;
   const slow = recent.filter(p => p.state === "warn" || p.state === "bad").length;
   const latest = recent[recent.length - 1];
-  $("probeSummary").textContent =
-    `${ok}/${recent.length} recent probes ok · ${slow} slow · ${failed} failed · latest ${fmtRel(latest.ts)}`;
+  const summary = `${ok}/${recent.length} recent probes ok · uptime24 ${uptime} · ${slow} slow · ${failed} failed · latest ${fmtRel(latest.ts)}`;
 
   const max = Math.max(1, ...recent.map(p => p.latency || 0));
-  $("probeChart").innerHTML = recent.map(p => {
+  const bars = recent.map(p => {
     const h_ = Math.max(5, Math.round(((p.latency || 0) / max) * 78));
     const status = p.ok ? p.status : "fail";
     const err = p.error ? ` · ${clip(p.error)}` : "";
     const tip = `${hostOf(p.target)} · ${p.model} · ${status} · ${fmtMs(p.latency)}ms · ${fmtRel(p.ts)}${err}`;
     return `<span class="p ${p.state}" style="height:${h_}px" data-tip="${esc(tip)}"></span>`;
   }).join("");
+
+  return `
+    <div class="probe-card">
+      <div class="probe-head">
+        <div>
+          <div class="h">${esc(tier)} model probes</div>
+          <div class="sub">${esc(host)}</div>
+          <div class="sub">${summary}</div>
+        </div>
+        ${probeLegend()}
+      </div>
+      <div class="probe-chart" role="img" aria-label="${esc(tier)} recent model probe status chart">${bars}</div>
+    </div>`;
+}
+
+function renderProbeCharts(data) {
+  const targets = data.targets || [];
+  $("probeCards").innerHTML = targets.length
+    ? targets.map(renderProviderProbeCard).join("")
+    : `
+      <div class="probe-card">
+        <div class="probe-head">
+          <div>
+            <div class="h">Model probes</div>
+            <div class="sub">Awaiting configured providers.</div>
+          </div>
+          ${probeLegend()}
+        </div>
+        <div class="probe-chart" role="img" aria-label="Recent model probe status chart">
+          <div class="empty">No probe results yet.</div>
+        </div>
+      </div>`;
 }
 
 /* ---------- fetching ---------- */
