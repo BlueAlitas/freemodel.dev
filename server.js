@@ -35,7 +35,12 @@ import { createHash } from "node:crypto";
 
 import { close as dbClose, init as dbInit, query } from "./db.js";
 import * as poller from "./poller.js";
-import { createAdminAuth, registerAccountAndAdminRoutes, registerProxyRoutes } from "./proxy.js";
+import {
+  createAdminAuth,
+  registerAccountAndAdminRoutes,
+  registerProxyRoutes,
+  startProxyProcessMonitor,
+} from "./proxy.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = parseInt(process.env.PORT ?? "3000", 10);
@@ -570,6 +575,11 @@ app.get("/api/visits/recent", adminAuth, async (req, res) => {
 /* ---------- boot ---------- */
 async function startWebServer({ startPoller = false } = {}) {
   await dbInit();
+  const proxyProcessMonitor = await startProxyProcessMonitor({
+    query,
+    role: cluster.worker ? "worker" : "single",
+    workerId: cluster.worker?.id || null,
+  });
   if (startPoller) await poller.start();
 
   const server = app.listen(PORT, () => {
@@ -586,7 +596,9 @@ async function startWebServer({ startPoller = false } = {}) {
     console.log(`[status] ${signal} received; shutting down pid ${process.pid}`);
     poller.stop();
     server.close(() => {
-      dbClose()
+      proxyProcessMonitor.stop()
+        .catch((err) => console.warn("[proxy] process monitor stop failed:", err.message))
+        .then(() => dbClose())
         .catch((err) => console.warn("[db] close failed:", err.message))
         .finally(() => process.exit(0));
     });
@@ -599,6 +611,10 @@ async function startWebServer({ startPoller = false } = {}) {
 async function startClusterPrimary() {
   cluster.schedulingPolicy = cluster.SCHED_RR;
   await dbInit();
+  const proxyProcessMonitor = await startProxyProcessMonitor({
+    query,
+    role: "primary",
+  });
 
   let shuttingDown = false;
   const forkWorker = () => cluster.fork({ ...process.env, FM_CLUSTER_WORKER: "1" });
@@ -617,6 +633,8 @@ async function startClusterPrimary() {
     forceExit.unref();
     cluster.disconnect(async () => {
       clearTimeout(forceExit);
+      await proxyProcessMonitor.stop({ completeActive: false })
+        .catch((err) => console.warn("[proxy] process monitor stop failed:", err.message));
       await dbClose().catch((err) => console.warn("[db] close failed:", err.message));
       process.exit(0);
     });

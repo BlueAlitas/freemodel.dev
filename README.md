@@ -114,6 +114,10 @@ Admin API access uses `ADMIN_TOKEN` through `x-admin-token`, `Authorization`, or
 | `PROXY_SUCCESS_BUFFER_BYTES` | `0` | When greater than `0`, fully buffers successful upstream responses up to this byte limit before sending them downstream, allowing terminated 2xx streams to be retried. |
 | `PROXY_ACCOUNT_CACHE_MS` | `5000` | Short cache for internal API-key and stored upstream-key lookups. Set `0` to disable. |
 | `PROXY_ACCOUNT_CACHE_MAX` | `10000` | Max cached account/key entries per app process. |
+| `PROXY_PROCESS_HEARTBEAT_MS` | `30000` | How often each app process refreshes its DB heartbeat for active-request ownership. |
+| `PROXY_PROCESS_STALE_MS` | `300000` | Active requests owned by a process with no fresh heartbeat after this window are marked complete. |
+| `PROXY_STALE_CLEANUP_INTERVAL_MS` | `60000` | How often each app process scans for abandoned active proxy requests. |
+| `PROXY_LEGACY_ACTIVE_REQUEST_STALE_MS` | `21600000` | Ownerless active rows from older deployments are marked complete only after this conservative age. |
 | `ADMIN_TOKEN` | _(empty)_ | Required token for `/api/admin/*`. |
 | `PROXY_KEY_SECRET` | `ADMIN_TOKEN` / local fallback | AES-GCM secret for stored upstream API keys. |
 | `TEST_MODELS` | `claude-haiku-4-5-20251001` | `*` = test every discovered model. |
@@ -140,7 +144,8 @@ Auto-created on boot:
 | `sessions` | One row per unique visitor; `last_seen` heartbeat drives "active now". |
 | `accounts` | Generated account IDs and hashed internal API keys. |
 | `account_upstream_keys` | Stored freemodel.dev API keys with tier, priority, enabled state, hash, hint, and encrypted/reversible secret. |
-| `proxy_requests` | Proxy request metadata, final status, latency, attempt count, selected upstream, and error text. |
+| `proxy_processes` | Live app-process heartbeats used to retire abandoned active proxy requests after restarts. |
+| `proxy_requests` | Proxy request metadata, process owner, final status, latency, attempt count, selected upstream, and error text. |
 | `proxy_attempts` | Per-attempt tier, upstream, status, latency, and error metadata. |
 | `system_settings` | Runtime flags such as `proxy_enabled`. |
 

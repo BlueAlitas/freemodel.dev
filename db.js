@@ -135,9 +135,22 @@ CREATE INDEX IF NOT EXISTS account_upstream_keys_account_idx
 CREATE UNIQUE INDEX IF NOT EXISTS account_upstream_keys_unique_hash_idx
   ON account_upstream_keys (account_id, key_hash);
 
+CREATE TABLE IF NOT EXISTS proxy_processes (
+  id         TEXT        PRIMARY KEY,
+  hostname   TEXT,
+  pid        INT,
+  worker_id  TEXT,
+  role       TEXT,
+  started_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_seen  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS proxy_processes_last_seen_idx
+  ON proxy_processes (last_seen DESC);
+
 CREATE TABLE IF NOT EXISTS proxy_requests (
   id            TEXT        PRIMARY KEY,
   account_id    TEXT        REFERENCES accounts(id) ON DELETE SET NULL,
+  proxy_process_id TEXT,
   method        TEXT        NOT NULL,
   route_path    TEXT        NOT NULL,
   request_model TEXT,
@@ -152,6 +165,8 @@ CREATE TABLE IF NOT EXISTS proxy_requests (
   started_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
   completed_at  TIMESTAMPTZ
 );
+ALTER TABLE proxy_requests
+  ADD COLUMN IF NOT EXISTS proxy_process_id TEXT;
 CREATE INDEX IF NOT EXISTS proxy_requests_started_at_idx
   ON proxy_requests (started_at DESC);
 CREATE INDEX IF NOT EXISTS proxy_requests_account_idx
@@ -162,6 +177,8 @@ CREATE INDEX IF NOT EXISTS proxy_requests_account_completed_idx
   ON proxy_requests (account_id, completed_at DESC) WHERE completed_at IS NOT NULL;
 CREATE INDEX IF NOT EXISTS proxy_requests_active_started_idx
   ON proxy_requests (started_at DESC) WHERE completed_at IS NULL;
+CREATE INDEX IF NOT EXISTS proxy_requests_process_active_idx
+  ON proxy_requests (proxy_process_id, started_at DESC) WHERE completed_at IS NULL;
 
 CREATE TABLE IF NOT EXISTS proxy_attempts (
   id             BIGSERIAL   PRIMARY KEY,

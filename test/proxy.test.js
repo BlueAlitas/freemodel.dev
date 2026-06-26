@@ -10,6 +10,7 @@ import express from "express";
 import {
   buildAccountAttemptPlan,
   buildDirectAttemptPlan,
+  cleanupAbandonedProxyRequests,
   createPostgresProxyStore,
   createProxyMiddleware,
   decryptSecret,
@@ -510,6 +511,57 @@ test("postgres proxy store coalesces cached account lookups", async () => {
   assert.equal(accounts.every((account) => account?.id === "acct_cached"), true);
   await store.findAccountByApiKey("internal-key");
   assert.equal(accountQueries, 1);
+});
+
+test("postgres proxy store stamps requests with process ownership", async () => {
+  const calls = [];
+  const store = createPostgresProxyStore({
+    processId: "proc_test_owner",
+    config: {
+      accountCacheMs: 0,
+      accountCacheMax: 100,
+      keySecret: "test-secret",
+    },
+    async query(sql, params) {
+      calls.push({ sql, params });
+      return { rows: [] };
+    },
+  });
+
+  await store.createProxyRequest({
+    id: "prx_test_owned",
+    accountId: null,
+    method: "POST",
+    routePath: "/v1/messages",
+    requestModel: "claude-haiku-4-5-20251001",
+    startedAt: 1234567890,
+  });
+
+  assert.match(calls[0].sql, /proxy_process_id/);
+  assert.equal(calls[0].params[2], "proc_test_owner");
+});
+
+test("stale active cleanup only targets dead process owners and old legacy rows", async () => {
+  let captured = null;
+  const result = await cleanupAbandonedProxyRequests({
+    config: {
+      processStaleMs: 300000,
+      legacyActiveRequestStaleMs: 21600000,
+    },
+    async query(sql, params) {
+      captured = { sql, params };
+      return { rows: [{ owned_closed: 2, legacy_closed: 1 }] };
+    },
+  });
+
+  assert.equal(result.ownedClosed, 2);
+  assert.equal(result.legacyClosed, 1);
+  assert.deepEqual(captured.params, [300000, 21600000]);
+  assert.match(captured.sql, /proxy_process_id IS NOT NULL/);
+  assert.match(captured.sql, /NOT EXISTS/);
+  assert.match(captured.sql, /pp.last_seen >= now\(\) - \(\$1::bigint \* interval '1 millisecond'\)/);
+  assert.match(captured.sql, /proxy_process_id IS NULL/);
+  assert.match(captured.sql, /started_at < now\(\) - \(\$2::bigint \* interval '1 millisecond'\)/);
 });
 
 test("internal account proxy rotates upstream keys by priority", async () => {

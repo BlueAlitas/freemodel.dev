@@ -6,12 +6,14 @@ import {
   randomBytes,
   timingSafeEqual,
 } from "node:crypto";
+import { hostname } from "node:os";
 import { performance } from "node:perf_hooks";
 
 const DEFAULT_TARGETS = {
   T2: "https://api-cc.freemodel.dev",
   T0: "https://cc.freemodel.dev",
 };
+const DEFAULT_PROXY_PROCESS_ID = randomId("proc", 12);
 
 const HOP_BY_HOP_HEADERS = new Set([
   "connection",
@@ -66,6 +68,10 @@ export function getProxyConfig(env = process.env) {
     successBodyBufferBytes: nonNegativeIntEnv(env, "PROXY_SUCCESS_BUFFER_BYTES", 0),
     accountCacheMs: nonNegativeIntEnv(env, "PROXY_ACCOUNT_CACHE_MS", 5000),
     accountCacheMax: intEnv(env, "PROXY_ACCOUNT_CACHE_MAX", 10000),
+    processHeartbeatMs: intEnv(env, "PROXY_PROCESS_HEARTBEAT_MS", 30_000),
+    processStaleMs: intEnv(env, "PROXY_PROCESS_STALE_MS", 5 * 60_000),
+    staleCleanupIntervalMs: intEnv(env, "PROXY_STALE_CLEANUP_INTERVAL_MS", 60_000),
+    legacyActiveRequestStaleMs: intEnv(env, "PROXY_LEGACY_ACTIVE_REQUEST_STALE_MS", 6 * 60 * 60_000),
     adminToken: env.ADMIN_TOKEN || "",
     keySecret: env.PROXY_KEY_SECRET || env.ADMIN_TOKEN || "",
   };
@@ -447,6 +453,180 @@ function publicActiveRequest(active) {
 
 export const activeProxyRequests = new Map();
 
+export function getProxyProcessId() {
+  return DEFAULT_PROXY_PROCESS_ID;
+}
+
+export async function registerProxyProcess({
+  query,
+  processId = getProxyProcessId(),
+  role = "web",
+  workerId = null,
+} = {}) {
+  if (typeof query !== "function") throw new Error("query function is required");
+  await query(`
+    INSERT INTO proxy_processes (id, hostname, pid, worker_id, role, started_at, last_seen)
+    VALUES ($1, $2, $3, $4, $5, now(), now())
+    ON CONFLICT (id) DO UPDATE
+    SET hostname = EXCLUDED.hostname,
+        pid = EXCLUDED.pid,
+        worker_id = EXCLUDED.worker_id,
+        role = EXCLUDED.role,
+        started_at = EXCLUDED.started_at,
+        last_seen = EXCLUDED.last_seen
+  `, [processId, hostname(), process.pid, workerId == null ? null : String(workerId), role]);
+}
+
+export async function heartbeatProxyProcess({
+  query,
+  processId = getProxyProcessId(),
+} = {}) {
+  if (typeof query !== "function") throw new Error("query function is required");
+  await query(
+    `UPDATE proxy_processes SET last_seen = now() WHERE id = $1`,
+    [processId]
+  );
+}
+
+export async function cleanupAbandonedProxyRequests({
+  query,
+  config = getProxyConfig(),
+} = {}) {
+  if (typeof query !== "function") throw new Error("query function is required");
+  const staleMs = Math.max(0, config.processStaleMs ?? 0);
+  const legacyStaleMs = Math.max(0, config.legacyActiveRequestStaleMs ?? 0);
+  if (staleMs === 0 && legacyStaleMs === 0) {
+    return { ownedClosed: 0, legacyClosed: 0 };
+  }
+
+  const { rows } = await query(`
+    WITH owned AS (
+      UPDATE proxy_requests pr
+      SET ok = false,
+          final_status = COALESCE(pr.final_status, 499),
+          latency_ms = COALESCE(
+            pr.latency_ms,
+            GREATEST(0, EXTRACT(EPOCH FROM (now() - pr.started_at)) * 1000)
+          ),
+          error = COALESCE(pr.error, 'Request abandoned by exited server process'),
+          completed_at = now()
+      WHERE $1::bigint > 0
+        AND pr.completed_at IS NULL
+        AND pr.proxy_process_id IS NOT NULL
+        AND NOT EXISTS (
+          SELECT 1
+          FROM proxy_processes pp
+          WHERE pp.id = pr.proxy_process_id
+            AND pp.last_seen >= now() - ($1::bigint * interval '1 millisecond')
+        )
+      RETURNING 1
+    ),
+    legacy AS (
+      UPDATE proxy_requests pr
+      SET ok = false,
+          final_status = COALESCE(pr.final_status, 499),
+          latency_ms = COALESCE(
+            pr.latency_ms,
+            GREATEST(0, EXTRACT(EPOCH FROM (now() - pr.started_at)) * 1000)
+          ),
+          error = COALESCE(pr.error, 'Legacy active request exceeded stale window'),
+          completed_at = now()
+      WHERE $2::bigint > 0
+        AND pr.completed_at IS NULL
+        AND pr.proxy_process_id IS NULL
+        AND pr.started_at < now() - ($2::bigint * interval '1 millisecond')
+      RETURNING 1
+    )
+    SELECT
+      (SELECT count(*)::int FROM owned) AS owned_closed,
+      (SELECT count(*)::int FROM legacy) AS legacy_closed
+  `, [staleMs, legacyStaleMs]);
+
+  return {
+    ownedClosed: rows[0]?.owned_closed ?? 0,
+    legacyClosed: rows[0]?.legacy_closed ?? 0,
+  };
+}
+
+export async function completeCurrentProcessActiveRequests({
+  query,
+  processId = getProxyProcessId(),
+  reason = "Server process stopped before request completed",
+} = {}) {
+  if (typeof query !== "function") throw new Error("query function is required");
+  const { rows } = await query(`
+    UPDATE proxy_requests
+    SET ok = false,
+        final_status = COALESCE(final_status, 499),
+        latency_ms = COALESCE(
+          latency_ms,
+          GREATEST(0, EXTRACT(EPOCH FROM (now() - started_at)) * 1000)
+        ),
+        error = COALESCE(error, $2),
+        completed_at = now()
+    WHERE proxy_process_id = $1
+      AND completed_at IS NULL
+    RETURNING id
+  `, [processId, reason]);
+  return rows.length;
+}
+
+export async function startProxyProcessMonitor({
+  query,
+  config = getProxyConfig(),
+  processId = getProxyProcessId(),
+  role = "web",
+  workerId = null,
+} = {}) {
+  if (typeof query !== "function") throw new Error("query function is required");
+
+  await registerProxyProcess({ query, processId, role, workerId });
+  const initial = await cleanupAbandonedProxyRequests({ query, config });
+  if (initial.ownedClosed || initial.legacyClosed) {
+    console.log(`[proxy] closed stale active requests owned=${initial.ownedClosed} legacy=${initial.legacyClosed}`);
+  }
+
+  const heartbeatMs = Math.max(1_000, config.processHeartbeatMs ?? 30_000);
+  const cleanupMs = Math.max(5_000, config.staleCleanupIntervalMs ?? 60_000);
+  let stopped = false;
+
+  const heartbeatTimer = setInterval(() => {
+    if (stopped) return;
+    heartbeatProxyProcess({ query, processId }).catch((err) => {
+      console.warn("[proxy] process heartbeat failed:", err.message);
+    });
+  }, heartbeatMs);
+  heartbeatTimer.unref?.();
+
+  const cleanupTimer = setInterval(() => {
+    if (stopped) return;
+    cleanupAbandonedProxyRequests({ query, config })
+      .then((result) => {
+        if (result.ownedClosed || result.legacyClosed) {
+          console.log(`[proxy] closed stale active requests owned=${result.ownedClosed} legacy=${result.legacyClosed}`);
+        }
+      })
+      .catch((err) => {
+        console.warn("[proxy] stale active request cleanup failed:", err.message);
+      });
+  }, cleanupMs);
+  cleanupTimer.unref?.();
+
+  return {
+    processId,
+    async stop({ completeActive = true } = {}) {
+      stopped = true;
+      clearInterval(heartbeatTimer);
+      clearInterval(cleanupTimer);
+      if (completeActive) {
+        const closed = await completeCurrentProcessActiveRequests({ query, processId });
+        if (closed) console.log(`[proxy] closed ${closed} active requests for stopped process`);
+      }
+      await query(`DELETE FROM proxy_processes WHERE id = $1`, [processId]);
+    },
+  };
+}
+
 async function readThroughCache(cache, key, { ttlMs, maxEntries }, loader) {
   if (ttlMs > 0) {
     const cached = cache.get(key);
@@ -472,7 +652,7 @@ async function readThroughCache(cache, key, { ttlMs, maxEntries }, loader) {
   }
 }
 
-export function createPostgresProxyStore({ query, config = getProxyConfig() }) {
+export function createPostgresProxyStore({ query, config = getProxyConfig(), processId = getProxyProcessId() }) {
   if (typeof query !== "function") throw new Error("query function is required");
   const cacheOptions = {
     ttlMs: config.accountCacheMs ?? 0,
@@ -524,9 +704,9 @@ export function createPostgresProxyStore({ query, config = getProxyConfig() }) {
     async createProxyRequest(row) {
       await query(`
         INSERT INTO proxy_requests
-          (id, account_id, method, route_path, request_model, started_at)
-        VALUES ($1, $2, $3, $4, $5, to_timestamp($6 / 1000.0))
-      `, [row.id, row.accountId, row.method, row.routePath, row.requestModel, row.startedAt]);
+          (id, account_id, proxy_process_id, method, route_path, request_model, started_at)
+        VALUES ($1, $2, $3, $4, $5, $6, to_timestamp($7 / 1000.0))
+      `, [row.id, row.accountId, processId, row.method, row.routePath, row.requestModel, row.startedAt]);
     },
 
     async recordProxyAttempt(row) {
@@ -1274,6 +1454,9 @@ export function registerAccountAndAdminRoutes(app, { query, config = getProxyCon
 
   app.get("/api/admin/overview", admin, async (req, res) => {
     try {
+      await cleanupAbandonedProxyRequests({ query, config }).catch((err) => {
+        console.warn("[admin] stale active request cleanup failed:", err.message);
+      });
       const limit = Math.min(200, Math.max(1, parseInt(req.query.limit || "80", 10)));
       const [{ rows: settingRows }, { rows: activeRows }, { rows: recentRows }, { rows: totalRows }, { rows: byStatusRows }, { rows: byTierRows }, { rows: accountRows }] = await Promise.all([
         query(`SELECT value FROM system_settings WHERE key = 'proxy_enabled'`),
