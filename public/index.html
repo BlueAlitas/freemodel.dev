@@ -410,6 +410,82 @@
     text-align: center;
   }
 
+  /* ─── Proxy promo banner ──────────────────────────────────── */
+  .promo {
+    background: var(--bg-warm);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 24px 28px;
+    margin-bottom: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    flex-wrap: wrap;
+  }
+  .promo-text { flex: 1; min-width: 240px; }
+  .promo-text h2 {
+    margin: 0 0 6px;
+    font-size: 17px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    color: var(--ink);
+  }
+  .promo-text p {
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--ink-soft);
+  }
+  .promo-text p a {
+    color: var(--accent-ink);
+    font-weight: 500;
+  }
+  .promo-text p a:hover { text-decoration: underline; }
+  .promo-stats {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex-shrink: 0;
+  }
+  .promo-stat {
+    text-align: center;
+    padding: 8px 18px;
+    border-radius: 10px;
+    min-width: 86px;
+  }
+  .promo-stat.old {
+    background: rgba(248,113,113,0.08);
+    border: 1px solid rgba(248,113,113,0.18);
+  }
+  .promo-stat.new {
+    background: rgba(52,211,153,0.08);
+    border: 1px solid rgba(52,211,153,0.2);
+  }
+  .promo-stat .num {
+    display: block;
+    font-size: 26px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.1;
+  }
+  .promo-stat .num.old { color: var(--bad); }
+  .promo-stat .num.new { color: var(--ok); }
+  .promo-stat .lbl {
+    display: block;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--ink-muted);
+    margin-top: 4px;
+  }
+  .promo-arrow {
+    color: var(--ink-muted);
+    font-size: 22px;
+    font-weight: 300;
+    flex-shrink: 0;
+  }
+
   /* ─── Visitor stat strip ──────────────────────────────────── */
   .visitor-strip {
     display: grid;
@@ -514,6 +590,24 @@
       </div>
     </div>
 
+    <section class="promo">
+      <div class="promo-text">
+        <h2>Frustrated with unreliable API responses?</h2>
+        <p>Our proxy filters out upstream failures so you only see the successful requests. <a href="/help">Learn how to use it &rarr;</a></p>
+      </div>
+      <div class="promo-stats">
+        <div class="promo-stat old">
+          <span class="num old">36.9%</span>
+          <span class="lbl">official success</span>
+        </div>
+        <span class="promo-arrow">&rarr;</span>
+        <div class="promo-stat new">
+          <span class="num new">97.3%</span>
+          <span class="lbl">proxied success</span>
+        </div>
+      </div>
+    </section>
+
     <div class="probe-cards" id="probeCards" aria-label="Provider model probe charts"></div>
 
     <div id="targets"></div>
@@ -544,6 +638,8 @@
     <footer class="bot">
       <div>© freemodel.dev · all checks are best-effort</div>
       <div>
+        <a href="/help" class="mono">/help</a>
+        &nbsp;·&nbsp;
         <a href="/account" class="mono">/account</a>
         &nbsp;·&nbsp;
         <a href="/admin" class="mono">/admin</a>

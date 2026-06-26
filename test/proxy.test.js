@@ -87,6 +87,22 @@ function createMemoryStore({ enabled = true, accounts = [], keysByAccount = {} }
       const request = state.requests.find((item) => item.id === row.requestId);
       if (request) Object.assign(request, row);
     },
+
+    async getAccountProxies(accountId) {
+      return [];
+    },
+
+    async createAccountProxy(accountId, proxyUrl, label) {
+      return "proxy_test_mock";
+    },
+
+    async updateAccountProxy(proxyId, accountId, updates) {
+      return true;
+    },
+
+    async deleteAccountProxy(proxyId, accountId) {
+      return true;
+    },
   };
 }
 

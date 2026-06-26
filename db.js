@@ -135,6 +135,17 @@ CREATE INDEX IF NOT EXISTS account_upstream_keys_account_idx
 CREATE UNIQUE INDEX IF NOT EXISTS account_upstream_keys_unique_hash_idx
   ON account_upstream_keys (account_id, key_hash);
 
+CREATE TABLE IF NOT EXISTS account_proxies (
+  id             TEXT        PRIMARY KEY,
+  account_id     TEXT        NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  proxy_url      TEXT        NOT NULL,
+  label          TEXT,
+  enabled        BOOLEAN     NOT NULL DEFAULT true,
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS account_proxies_account_idx
+  ON account_proxies (account_id, enabled);
+
 CREATE TABLE IF NOT EXISTS proxy_processes (
   id         TEXT        PRIMARY KEY,
   hostname   TEXT,

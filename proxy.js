@@ -8,6 +8,16 @@ import {
 } from "node:crypto";
 import { hostname } from "node:os";
 import { performance } from "node:perf_hooks";
+import { setGlobalDispatcher, Agent as UndiciAgent, ProxyAgent, Socks5ProxyAgent } from "undici";
+
+// Default undici dispatcher tuned for high concurrency
+if (!process.env.FM_NO_UNDICI_TUNE) {
+  setGlobalDispatcher(new UndiciAgent({
+    connections: 256,
+    keepAliveTimeout: 60000,
+    keepAliveMaxTimeout: 120000,
+  }));
+}
 
 const DEFAULT_TARGETS = {
   T2: "https://api-cc.freemodel.dev",
@@ -62,12 +72,12 @@ export function getProxyConfig(env = process.env) {
       T2: normalizeBaseUrl(env.PROXY_T2_URL || DEFAULT_TARGETS.T2),
       T0: normalizeBaseUrl(env.PROXY_T0_URL || DEFAULT_TARGETS.T0),
     },
-    retriesPerCredential: intEnv(env, "PROXY_RETRIES_PER_CREDENTIAL", 10),
+    retriesPerCredential: intEnv(env, "PROXY_RETRIES_PER_CREDENTIAL", 3),
     bodyLimit: env.PROXY_BODY_LIMIT || "20mb",
     failureBodyDrainBytes: intEnv(env, "PROXY_FAILURE_DRAIN_BYTES", 64 * 1024),
     successBodyBufferBytes: nonNegativeIntEnv(env, "PROXY_SUCCESS_BUFFER_BYTES", 0),
-    accountCacheMs: nonNegativeIntEnv(env, "PROXY_ACCOUNT_CACHE_MS", 5000),
-    accountCacheMax: intEnv(env, "PROXY_ACCOUNT_CACHE_MAX", 10000),
+    accountCacheMs: nonNegativeIntEnv(env, "PROXY_ACCOUNT_CACHE_MS", 2000),
+    accountCacheMax: intEnv(env, "PROXY_ACCOUNT_CACHE_MAX", 50000),
     processHeartbeatMs: intEnv(env, "PROXY_PROCESS_HEARTBEAT_MS", 30_000),
     processStaleMs: intEnv(env, "PROXY_PROCESS_STALE_MS", 5 * 60_000),
     staleCleanupIntervalMs: intEnv(env, "PROXY_STALE_CLEANUP_INTERVAL_MS", 60_000),
@@ -652,6 +662,61 @@ async function readThroughCache(cache, key, { ttlMs, maxEntries }, loader) {
   }
 }
 
+/* ---------- concurrency semaphore ---------- */
+const PROXY_MAX_CONCURRENT = intEnv(process.env, "PROXY_MAX_CONCURRENT", 500);
+let proxyActiveCount = 0;
+let proxyWaiters = [];
+
+function acquireProxySlot() {
+  if (proxyActiveCount < PROXY_MAX_CONCURRENT) {
+    proxyActiveCount++;
+    return Promise.resolve(releaseProxySlot);
+  }
+  return new Promise((resolve) => {
+    proxyWaiters.push(() => {
+      proxyActiveCount++;
+      resolve(releaseProxySlot);
+    });
+  });
+}
+
+function releaseProxySlot() {
+  proxyActiveCount--;
+  const next = proxyWaiters.shift();
+  if (next) next();
+}
+
+/* ---------- external proxy helpers ---------- */
+/**
+ * Create a proxy-aware fetch based on proxy URL.
+ * Supports socks5://, socks5h://, socks4://, http://, https:// proxy URLs.
+ */
+function createProxiedFetch(proxyUrl) {
+  if (!proxyUrl) return globalThis.fetch;
+  try {
+    const url = String(proxyUrl).trim();
+    if (url.startsWith("socks5h://") || url.startsWith("socks5://") || url.startsWith("socks4://")) {
+      const agent = new Socks5ProxyAgent(url);
+      return (fetchUrl, fetchOpts = {}) =>
+        globalThis.fetch(fetchUrl, { ...fetchOpts, dispatcher: agent });
+    }
+    if (url.startsWith("http://") || url.startsWith("https://")) {
+      const agent = new ProxyAgent(url);
+      return (fetchUrl, fetchOpts = {}) =>
+        globalThis.fetch(fetchUrl, { ...fetchOpts, dispatcher: agent });
+    }
+  } catch (err) {
+    console.warn("[proxy] failed to create proxy agent for", proxyUrl, err.message);
+  }
+  return globalThis.fetch;
+}
+
+/** Pick a random proxy URL from the list for rotation. */
+function pickProxyUrl(proxies) {
+  if (!proxies || !proxies.length) return null;
+  return proxies[Math.floor(Math.random() * proxies.length)].proxyUrl;
+}
+
 export function createPostgresProxyStore({ query, config = getProxyConfig(), processId = getProxyProcessId() }) {
   if (typeof query !== "function") throw new Error("query function is required");
   const cacheOptions = {
@@ -752,6 +817,59 @@ export function createPostgresProxyStore({ query, config = getProxyConfig(), pro
         row.streamed,
       ]);
     },
+
+    async getAccountProxies(accountId) {
+      const { rows } = await query(`
+        SELECT id, proxy_url, label, enabled, created_at
+        FROM account_proxies
+        WHERE account_id = $1 AND enabled = true
+        ORDER BY created_at ASC
+      `, [accountId]);
+      return rows.map((r) => ({
+        id: r.id,
+        proxyUrl: r.proxy_url,
+        label: r.label,
+        enabled: r.enabled,
+        createdAt: r.created_at,
+      }));
+    },
+
+    async createAccountProxy(accountId, proxyUrl, label = null) {
+      const id = randomId("proxy", 8);
+      await query(`
+        INSERT INTO account_proxies (id, account_id, proxy_url, label, enabled)
+        VALUES ($1, $2, $3, $4, true)
+      `, [id, accountId, proxyUrl, clip(label, 80) || null]);
+      return id;
+    },
+
+    async updateAccountProxy(proxyId, accountId, updates) {
+      const label = updates.label !== undefined ? (clip(updates.label, 80) || null) : undefined;
+      const enabled = updates.enabled !== undefined ? (updates.enabled ? true : false) : undefined;
+      const proxyUrl = updates.proxyUrl !== undefined ? updates.proxyUrl : undefined;
+      const setClauses = [];
+      const params = [];
+      let idx = 1;
+      if (label !== undefined) { setClauses.push(`label = $${idx++}`); params.push(label); }
+      if (enabled !== undefined) { setClauses.push(`enabled = $${idx++}`); params.push(enabled); }
+      if (proxyUrl !== undefined) { setClauses.push(`proxy_url = $${idx++}`); params.push(proxyUrl); }
+      if (!setClauses.length) return false;
+      params.push(proxyId, accountId);
+      const { rows } = await query(`
+        UPDATE account_proxies SET ${setClauses.join(", ")}
+        WHERE id = $${idx++} AND account_id = $${idx++}
+        RETURNING id
+      `, [...params, proxyId, accountId]);
+      return rows.length > 0;
+    },
+
+    async deleteAccountProxy(proxyId, accountId) {
+      const { rows } = await query(
+        'DELETE FROM account_proxies WHERE id = $1 AND account_id = $2 RETURNING id',
+        [proxyId, accountId]
+      );
+      return rows.length > 0;
+    },
   };
 }
 
@@ -772,9 +890,11 @@ export function createProxyMiddleware({
   if (typeof fetchImpl !== "function") throw new Error("fetch implementation is required");
 
   return async function proxyHandler(req, res) {
-    req.setTimeout?.(0);
-    res.setTimeout?.(0);
-    res.socket?.setTimeout?.(0);
+    const release = await acquireProxySlot();
+    try {
+      req.setTimeout?.(0);
+      res.setTimeout?.(0);
+      res.socket?.setTimeout?.(0);
 
     const requestId = idFactory();
     const startedAt = now();
@@ -838,6 +958,9 @@ export function createProxyMiddleware({
       const inboundToken = extractAuthorizationToken(req.get("authorization"));
       const account = inboundToken ? await store.findAccountByApiKey(inboundToken) : null;
       active.accountId = account?.id || null;
+      const activeProxies = account?.id
+        ? (await store.getAccountProxies(account.id).catch(() => []))
+        : [];
 
       await store.createProxyRequest({
         id: requestId,
@@ -887,12 +1010,15 @@ export function createProxyMiddleware({
             accountKeyId: step.accountKeyId,
           });
 
+          const proxyUrl = pickProxyUrl(activeProxies);
+          const attemptFetch = proxyUrl ? createProxiedFetch(proxyUrl) : fetchImpl;
+
           const attempt = await fetchAttempt({
             req,
             rawBody,
             path,
             step,
-            fetchImpl,
+            fetchImpl: attemptFetch,
             config,
             signal: downstreamAbort.signal,
           });
@@ -1011,6 +1137,9 @@ export function createProxyMiddleware({
       }
     } finally {
       activeRequests.delete(requestId);
+    }
+    } finally {
+      release();
     }
   };
 }
@@ -1283,6 +1412,7 @@ async function accountUsagePayload(accountId, query, config = getProxyConfig()) 
 export function registerAccountAndAdminRoutes(app, { query, config = getProxyConfig() } = {}) {
   if (typeof query !== "function") throw new Error("query function is required");
   const admin = requireAdmin(config);
+  const store = createPostgresProxyStore({ query, config });
 
   app.post("/api/accounts", async (_req, res) => {
     try {
@@ -1449,6 +1579,67 @@ export function registerAccountAndAdminRoutes(app, { query, config = getProxyCon
       res.json({ account: await accountPayload(req.params.accountId, query) });
     } catch (err) {
       res.status(500).json({ error: "key_delete_failed" });
+    }
+  });
+
+  /* ---------- external proxy management ---------- */
+  app.get("/api/accounts/:accountId/proxies", async (req, res) => {
+    try {
+      const proxies = await store.getAccountProxies(req.params.accountId);
+      res.json({ proxies });
+    } catch (err) {
+      res.status(500).json({ error: "proxies_load_failed" });
+    }
+  });
+
+  app.post("/api/accounts/:accountId/proxies", async (req, res) => {
+    try {
+      const proxyUrl = String(req.body?.proxyUrl || "").trim();
+      if (!proxyUrl) {
+        res.status(400).json({ error: "proxy_url_required" });
+        return;
+      }
+      if (!/^(socks5h?:\/\/|socks4:\/\/|https?:\/\/)/i.test(proxyUrl)) {
+        res.status(400).json({ error: "invalid_proxy_url_format" });
+        return;
+      }
+      const id = await store.createAccountProxy(req.params.accountId, proxyUrl, req.body?.label);
+      const proxies = await store.getAccountProxies(req.params.accountId);
+      res.status(201).json({ proxyId: id, proxies });
+    } catch (err) {
+      res.status(500).json({ error: "proxy_add_failed" });
+    }
+  });
+
+  app.patch("/api/accounts/:accountId/proxies/:proxyId", async (req, res) => {
+    try {
+      const ok = await store.updateAccountProxy(req.params.proxyId, req.params.accountId, {
+        label: req.body?.label,
+        enabled: req.body?.enabled,
+        proxyUrl: req.body?.proxyUrl,
+      });
+      if (!ok) {
+        res.status(404).json({ error: "proxy_not_found" });
+        return;
+      }
+      const proxies = await store.getAccountProxies(req.params.accountId);
+      res.json({ proxies });
+    } catch (err) {
+      res.status(500).json({ error: "proxy_update_failed" });
+    }
+  });
+
+  app.delete("/api/accounts/:accountId/proxies/:proxyId", async (req, res) => {
+    try {
+      const ok = await store.deleteAccountProxy(req.params.proxyId, req.params.accountId);
+      if (!ok) {
+        res.status(404).json({ error: "proxy_not_found" });
+        return;
+      }
+      const proxies = await store.getAccountProxies(req.params.accountId);
+      res.json({ proxies });
+    } catch (err) {
+      res.status(500).json({ error: "proxy_delete_failed" });
     }
   });
 

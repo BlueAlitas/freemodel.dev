@@ -8,7 +8,7 @@
     "start": "node server.js",
     "dev": "node --watch server.js",
     "probe": "node probe.js",
-    "test": "node --test",
+    "test": "node --test test/proxy.test.js",
     "test:db": "node scripts/db-smoke-check.js",
     "test:cluster": "node scripts/cluster-smoke-check.js",
     "test:live": "node scripts/live-freemodel-check.js"

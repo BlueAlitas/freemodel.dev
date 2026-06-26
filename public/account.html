@@ -3,622 +3,1509 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>freemodel.dev - account</title>
+<title>freemodel.dev · account</title>
 <meta name="theme-color" content="#0d0d0d" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
 <style>
-  :root {
-    --bg: #0d0d0d;
-    --panel: #171717;
-    --panel-2: #1f1f1f;
-    --ink: #f3f4f6;
-    --soft: #d1d5db;
-    --muted: #9ca3af;
-    --line: #2b2b2b;
-    --ok: #34d399;
-    --warn: #fbbf24;
-    --bad: #f87171;
-    color-scheme: dark;
-  }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0;
-    background: var(--bg);
-    color: var(--ink);
-    font: 14px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Segoe UI", sans-serif;
-  }
-  a { color: inherit; text-decoration: none; }
-  button, input, select {
-    font: inherit;
-  }
-  button {
-    border: 1px solid var(--line);
-    background: var(--panel-2);
-    color: var(--ink);
-    border-radius: 8px;
-    padding: 9px 12px;
-    cursor: pointer;
-  }
-  button.primary { background: #0b3a25; border-color: #145c3d; color: #d1fae5; }
-  button.danger { background: #3f1518; border-color: #6b2028; color: #fecaca; }
-  button:disabled { opacity: .5; cursor: not-allowed; }
-  input, select {
-    width: 100%;
-    border: 1px solid var(--line);
-    background: #111;
-    color: var(--ink);
-    border-radius: 8px;
-    padding: 9px 10px;
-  }
-  label { display: block; color: var(--muted); font-size: 12px; margin-bottom: 5px; }
-  table { width: 100%; border-collapse: collapse; }
-  th, td { border-bottom: 1px solid var(--line); padding: 10px 8px; text-align: left; vertical-align: middle; }
-  th { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .07em; font-weight: 500; }
-  td.actions { width: 1%; white-space: nowrap; }
-  .wrap { max-width: 1120px; margin: 0 auto; padding: 28px 22px 72px; }
-  .top {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 16px;
-    padding-bottom: 20px;
-    border-bottom: 1px solid #202020;
-    margin-bottom: 24px;
-  }
-  .brand { font-size: 16px; font-weight: 600; }
-  .brand b { color: var(--ok); }
-  .nav { display: flex; gap: 12px; color: var(--muted); font-size: 13px; }
-  .grid { display: grid; grid-template-columns: 360px minmax(0, 1fr); gap: 16px; align-items: start; }
-  @media (max-width: 860px) { .grid { grid-template-columns: 1fr; } }
-  .panel {
-    background: var(--panel);
-    border: 1px solid var(--line);
-    border-radius: 8px;
-    padding: 16px;
-  }
-  .panel h1, .panel h2 {
-    margin: 0 0 14px;
-    font-size: 15px;
-    font-weight: 600;
-    letter-spacing: 0;
-  }
-  .stack { display: grid; gap: 12px; }
-  .row { display: flex; gap: 8px; align-items: end; }
-  .row > * { flex: 1; }
-  .row > button { flex: 0 0 auto; }
-  .muted { color: var(--muted); }
-  .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
-  .notice {
-    display: none;
-    border: 1px solid var(--line);
-    background: var(--panel-2);
-    border-radius: 8px;
-    padding: 10px;
-    color: var(--soft);
-    overflow-wrap: anywhere;
-  }
-  .notice.show { display: block; }
-  .notice.ok { border-color: rgba(52,211,153,.35); }
-  .notice.bad { border-color: rgba(248,113,113,.35); color: #fecaca; }
-  .meta {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 8px;
-  }
-  .tile {
-    background: var(--panel-2);
-    border: 1px solid #252525;
-    border-radius: 8px;
-    padding: 10px;
-  }
-  .tile span { display: block; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .07em; }
-  .tile b { display: block; margin-top: 4px; overflow-wrap: anywhere; font-weight: 500; }
-  .wide { grid-column: 1 / -1; }
-  .key-form {
-    display: grid;
-    grid-template-columns: 1.2fr 1.8fr .7fr .7fr auto;
-    gap: 8px;
-    align-items: end;
-    margin-bottom: 14px;
-  }
-  @media (max-width: 900px) { .key-form { grid-template-columns: 1fr; } }
-  .usage-tiles {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 8px;
-    margin: 10px 0 14px;
-  }
-  @media (max-width: 760px) { .usage-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-  .usage-tile {
-    background: var(--panel-2);
-    border: 1px solid #252525;
-    border-radius: 8px;
-    padding: 10px;
-  }
-  .usage-tile span { display: block; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .07em; }
-  .usage-tile b { display: block; margin-top: 4px; font-size: 22px; line-height: 1.1; font-variant-numeric: tabular-nums; }
-  .usage-chart-wrap { overflow-x: auto; }
-  .usage-chart {
-    display: flex;
-    align-items: flex-end;
-    gap: 4px;
-    height: 126px;
-    min-width: 680px;
-    padding-top: 10px;
-    border-bottom: 1px solid var(--line);
-  }
-  .usage-bar {
-    flex: 1 1 0;
-    min-width: 8px;
-    min-height: 2px;
-    border-radius: 3px 3px 0 0;
-    background: var(--ok);
-    opacity: .84;
-    position: relative;
-    transition: opacity .2s ease, transform .2s ease;
-  }
-  .usage-bar.warn { background: var(--warn); }
-  .usage-bar.bad { background: var(--bad); }
-  .usage-bar.empty { background: var(--line); opacity: .65; height: 2px !important; }
-  .usage-bar:hover { opacity: 1; transform: translateY(-2px); }
-  .usage-bar:hover::after {
-    content: attr(data-tip);
-    position: absolute;
-    bottom: calc(100% + 6px);
-    left: 50%;
-    transform: translateX(-50%);
-    background: var(--bg);
-    color: var(--ink);
-    border: 1px solid var(--line);
-    padding: 6px 8px;
-    border-radius: 6px;
-    font-size: 11px;
-    white-space: nowrap;
-    pointer-events: none;
-    z-index: 5;
-    font-variant-numeric: tabular-nums;
-  }
-  .usage-axis {
-    display: flex;
-    justify-content: space-between;
-    min-width: 680px;
-    color: var(--muted);
-    font-size: 11px;
-    margin-top: 6px;
-  }
-  .usage-breakdowns {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 14px;
-    margin-top: 16px;
-  }
-  @media (max-width: 760px) { .usage-breakdowns { grid-template-columns: 1fr; } }
-  .usage-breakdowns h3 {
-    margin: 0 0 8px;
-    color: var(--muted);
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: .07em;
-    font-weight: 500;
-  }
-  .usage-mini { display: grid; gap: 7px; }
-  .usage-mini-row {
-    display: grid;
-    grid-template-columns: minmax(120px, 1fr) 2fr 76px;
-    gap: 8px;
-    align-items: center;
-    color: var(--soft);
-    font-size: 12px;
-    font-variant-numeric: tabular-nums;
-  }
-  .usage-mini-track {
-    height: 8px;
-    border: 1px solid #252525;
-    border-radius: 999px;
-    background: #111;
-    overflow: hidden;
-  }
-  .usage-mini-fill { height: 100%; background: var(--ok); min-width: 2px; }
-  .empty { color: var(--muted); padding: 14px 8px; }
-  .hidden { display: none !important; }
+/* ── Reset ───────────────────────────────────────────────── */
+*,*::before,*::after{box-sizing:border-box}
+html{-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
+body{
+  margin:0;
+  background:#0d0d0d;
+  color:#f3f4f6;
+  font:14px/1.55 Inter,-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",sans-serif;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%}
+
+/* ── Variables ────────────────────────────────────────────── */
+:root{
+  --bg:#0d0d0d;
+  --panel:#171717;
+  --panel-2:#1e1e1e;
+  --panel-3:#242424;
+  --ink:#f3f4f6;
+  --soft:#d1d5db;
+  --muted:#8a8f98;
+  --line:#2a2a2a;
+  --line-focus:#383838;
+  --green:#22c55e;
+  --green-bg:rgba(34,197,94,.12);
+  --emerald:#34d399;
+  --warn:#f59e0b;
+  --warn-bg:rgba(245,158,11,.12);
+  --bad:#ef4444;
+  --bad-bg:rgba(239,68,68,.12);
+  --blue:#3b82f6;
+  --blue-bg:rgba(59,130,246,.1);
+  --purple:#8b5cf6;
+  --radius:10px;
+  --radius-sm:6px;
+  --shadow:0 1px 3px rgba(0,0,0,.3),0 1px 2px rgba(0,0,0,.2);
+  --shadow-lg:0 8px 32px rgba(0,0,0,.45);
+  --transition:180ms cubic-bezier(.4,0,.2,1);
+  --font-mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  color-scheme:dark;
+}
+
+/* ── Typography ───────────────────────────────────────────── */
+h1,h2,h3{font-weight:600;letter-spacing:-.01em}
+h1{font-size:17px;margin:0 0 16px}
+h2{font-size:15px;margin:0 0 12px}
+h3{font-size:13px;margin:0 0 8px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.mono{font-family:var(--font-mono);font-size:13px}
+.muted{color:var(--muted)}
+label{
+  display:block;
+  font-size:12px;
+  font-weight:500;
+  color:var(--muted);
+  margin-bottom:5px;
+  letter-spacing:.02em;
+}
+
+/* ── Layout ───────────────────────────────────────────────── */
+.wrap{max-width:1200px;margin:0 auto;padding:0 24px 48px}
+
+/* ── Header ───────────────────────────────────────────────── */
+.header{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  padding:18px 0 14px;
+  border-bottom:1px solid #202020;
+  margin-bottom:28px;
+}
+.brand{
+  font-size:15px;
+  font-weight:600;
+  display:flex;
+  align-items:center;
+  gap:10px;
+}
+.brand-logo{
+  width:22px;height:22px;
+  background:linear-gradient(135deg,var(--green),var(--emerald));
+  border-radius:6px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  font-size:11px;
+  font-weight:700;
+  color:#0d0d0d;
+}
+.brand b{color:var(--emerald);font-weight:600}
+.nav{display:flex;gap:4px}
+.nav a{
+  padding:6px 14px;
+  border-radius:var(--radius-sm);
+  color:var(--muted);
+  font-size:13px;
+  font-weight:500;
+  transition:background var(--transition),color var(--transition);
+}
+.nav a:hover{background:var(--panel-2);color:var(--ink)}
+.nav a.active{color:var(--ink);background:var(--panel-2)}
+
+/* ── Hero / Empty State ───────────────────────────────────── */
+.hero{
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  text-align:center;
+  padding:80px 24px;
+  min-height:50vh;
+}
+.hero-icon{
+  width:56px;height:56px;
+  border-radius:16px;
+  background:linear-gradient(135deg,var(--green-bg),transparent);
+  border:1px solid rgba(34,197,94,.2);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-size:24px;
+  margin-bottom:20px;
+}
+.hero h1{font-size:20px;margin-bottom:8px}
+.hero p{color:var(--muted);max-width:440px;margin:0 0 28px;font-size:14px;line-height:1.6}
+.hero-actions{display:flex;gap:10px;flex-wrap:wrap;justify-content:center}
+.hero-input{
+  display:flex;
+  gap:8px;
+  align-items:center;
+  background:var(--panel);
+  border:1px solid var(--line);
+  border-radius:var(--radius);
+  padding:4px;
+}
+.hero-input input{
+  background:transparent;
+  border:none;
+  outline:none;
+  color:var(--ink);
+  font-family:var(--font-mono);
+  font-size:13px;
+  padding:6px 10px;
+  width:240px;
+}
+.hero-input input::placeholder{color:var(--muted)}
+
+/* ── App layout (loaded) ──────────────────────────────────── */
+.app-layout{
+  display:grid;
+  grid-template-columns:340px minmax(0,1fr);
+  gap:24px;
+  align-items:start;
+}
+@media(max-width:860px){
+  .app-layout{grid-template-columns:1fr}
+  .wrap{padding:0 14px 32px}
+}
+
+/* ── Panels ───────────────────────────────────────────────── */
+.panel{
+  background:var(--panel);
+  border:1px solid var(--line);
+  border-radius:var(--radius);
+  padding:20px;
+  transition:border-color var(--transition);
+}
+.panel:focus-within{border-color:var(--line-focus)}
+.panel-header{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  margin-bottom:16px;
+}
+.panel-header h2{margin:0}
+
+/* ── Forms ────────────────────────────────────────────────── */
+input,select,textarea{
+  width:100%;
+  border:1px solid var(--line);
+  background:#111;
+  color:var(--ink);
+  border-radius:var(--radius-sm);
+  padding:8px 10px;
+  font-size:13px;
+  font-family:inherit;
+  outline:none;
+  transition:border-color var(--transition),box-shadow var(--transition);
+}
+input:focus,select:focus,textarea:focus{
+  border-color:var(--green);
+  box-shadow:0 0 0 3px rgba(34,197,94,.15);
+}
+input::placeholder{color:#555}
+input[readonly]{
+  background:var(--panel-2);
+  cursor:default;
+  opacity:.8;
+}
+select{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238a8f98' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;padding-right:30px}
+select optgroup{font-style:normal}
+.row{display:flex;gap:8px;align-items:end}
+.row>*{flex:1}
+.row>button{flex:0 0 auto}
+.stack{display:grid;gap:12px}
+
+/* ── Buttons ──────────────────────────────────────────────── */
+button{
+  font-family:inherit;
+  font-size:13px;
+  font-weight:500;
+  border:1px solid var(--line);
+  background:var(--panel-2);
+  color:var(--ink);
+  border-radius:var(--radius-sm);
+  padding:8px 14px;
+  cursor:pointer;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:6px;
+  transition:all var(--transition);
+  white-space:nowrap;
+  user-select:none;
+}
+button:hover{background:var(--panel-3);border-color:var(--line-focus)}
+button:active{transform:scale(.97)}
+button:disabled{opacity:.4;cursor:not-allowed;transform:none}
+button.primary{
+  background:var(--green-bg);
+  border-color:rgba(34,197,94,.35);
+  color:var(--green);
+}
+button.primary:hover{background:rgba(34,197,94,.2);border-color:rgba(34,197,94,.5)}
+button.danger{
+  background:var(--bad-bg);
+  border-color:rgba(239,68,68,.3);
+  color:var(--bad);
+}
+button.danger:hover{background:rgba(239,68,68,.2);border-color:rgba(239,68,68,.45)}
+button.ghost{
+  background:transparent;
+  border-color:transparent;
+  color:var(--muted);
+  padding:6px 8px;
+}
+button.ghost:hover{background:var(--panel-2);color:var(--ink);border-color:transparent}
+button.icon-btn{
+  width:32px;height:32px;
+  padding:0;
+  border-radius:var(--radius-sm);
+}
+button.sm{padding:5px 10px;font-size:12px}
+.btn-group{display:flex;gap:6px}
+
+/* ── Sidebar account panel ────────────────────────────────── */
+.account-id-display{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  padding:8px 12px;
+  background:var(--panel-2);
+  border:1px solid var(--line);
+  border-radius:var(--radius-sm);
+  margin-bottom:12px;
+  font-family:var(--font-mono);
+  font-size:13px;
+  overflow:hidden;
+}
+.account-id-display .id-label{
+  color:var(--muted);
+  font-size:11px;
+  text-transform:uppercase;
+  letter-spacing:.06em;
+  font-family:Inter,sans-serif;
+  flex-shrink:0;
+}
+.account-id-display .id-value{
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+.created-badge{
+  color:var(--muted);
+  font-size:12px;
+  margin-bottom:16px;
+}
+.created-badge strong{color:var(--soft);font-weight:500}
+.api-key-group{
+  position:relative;
+  margin-bottom:14px;
+}
+.api-key-group .key-input-wrap{
+  display:flex;
+  border:1px solid var(--line);
+  border-radius:var(--radius-sm);
+  overflow:hidden;
+  background:#111;
+  transition:border-color var(--transition);
+}
+.api-key-group .key-input-wrap:focus-within{border-color:var(--green);box-shadow:0 0 0 3px rgba(34,197,94,.15)}
+.api-key-group input{
+  border:none;
+  background:transparent;
+  border-radius:0;
+  font-family:var(--font-mono);
+  font-size:12px;
+  letter-spacing:-.01em;
+  box-shadow:none;
+}
+.api-key-group input:focus{box-shadow:none}
+.copy-btn{
+  flex-shrink:0;
+  border:none;
+  border-left:1px solid var(--line);
+  background:var(--panel-2);
+  color:var(--muted);
+  border-radius:0;
+  padding:8px 12px;
+  font-size:12px;
+  cursor:pointer;
+  transition:all var(--transition);
+}
+.copy-btn:hover{background:var(--panel-3);color:var(--ink)}
+.copy-btn.copied{background:var(--green-bg);color:var(--green)}
+.sidebar-actions{display:flex;gap:8px;margin-top:4px}
+.sidebar-actions button{flex:1}
+
+/* ── Tabs ─────────────────────────────────────────────────── */
+.tabs{
+  display:flex;
+  gap:2px;
+  border-bottom:1px solid var(--line);
+  margin-bottom:20px;
+  overflow-x:auto;
+  -webkit-overflow-scrolling:touch;
+}
+.tab-btn{
+  display:flex;
+  align-items:center;
+  gap:6px;
+  padding:10px 18px;
+  font-size:13px;
+  font-weight:500;
+  color:var(--muted);
+  background:transparent;
+  border:none;
+  border-radius:0;
+  border-bottom:2px solid transparent;
+  margin-bottom:-1px;
+  cursor:pointer;
+  transition:all var(--transition);
+  white-space:nowrap;
+}
+.tab-btn:hover{color:var(--ink);background:var(--panel-2);border-color:transparent}
+.tab-btn.active{color:var(--ink);border-bottom-color:var(--green);background:transparent}
+.tab-btn .badge{
+  font-size:10px;
+  padding:1px 6px;
+  border-radius:999px;
+  background:var(--panel-3);
+  color:var(--muted);
+}
+.tab-btn.active .badge{background:var(--green-bg);color:var(--green)}
+.tab-panel{display:none;animation:fadeIn .25s ease}
+.tab-panel.active{display:block}
+@keyframes fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
+
+/* ── Tables ───────────────────────────────────────────────── */
+.table-wrap{overflow-x:auto;margin:0 -4px;padding:0 4px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+thead th{
+  color:var(--muted);
+  font-size:11px;
+  font-weight:500;
+  text-transform:uppercase;
+  letter-spacing:.07em;
+  padding:8px 8px 10px 8px;
+  border-bottom:1px solid var(--line);
+  text-align:left;
+  white-space:nowrap;
+}
+tbody td{
+  padding:8px;
+  border-bottom:1px solid rgba(42,42,42,.5);
+  vertical-align:middle;
+  transition:background var(--transition);
+}
+tbody tr:hover td{background:rgba(255,255,255,.015)}
+tbody tr:last-child td{border-bottom:none}
+td.actions{width:1%;white-space:nowrap}
+td.mono{font-family:var(--font-mono);font-size:12px}
+table input,table select{
+  padding:5px 7px;
+  font-size:12px;
+  border-radius:4px;
+  min-width:0;
+}
+table input[type="checkbox"]{width:auto;accent-color:var(--green)}
+
+/* ── Key form ─────────────────────────────────────────────── */
+.key-form{
+  display:grid;
+  grid-template-columns:1.2fr 1.8fr .7fr .65fr auto;
+  gap:8px;
+  align-items:end;
+  margin-bottom:16px;
+}
+@media(max-width:960px){.key-form{grid-template-columns:1fr 1fr}}
+@media(max-width:600px){.key-form{grid-template-columns:1fr}}
+
+/* ── Proxy form ───────────────────────────────────────────── */
+.proxy-form{
+  display:grid;
+  grid-template-columns:1fr 2.2fr auto;
+  gap:8px;
+  align-items:end;
+  margin-bottom:16px;
+}
+@media(max-width:640px){.proxy-form{grid-template-columns:1fr}}
+
+/* ── Warning banner (proxy section) ───────────────────────── */
+.warning-banner{
+  display:flex;
+  gap:14px;
+  padding:14px 16px;
+  border-radius:var(--radius);
+  background:linear-gradient(135deg,rgba(245,158,11,.08),rgba(245,158,11,.03));
+  border:1px solid rgba(245,158,11,.3);
+  border-left:3px solid var(--warn);
+  margin-bottom:18px;
+  animation:warningPulse 3s ease-in-out infinite;
+}
+@keyframes warningPulse{
+  0%,100%{border-color:rgba(245,158,11,.3)}
+  50%{border-color:rgba(245,158,11,.55)}
+}
+.warning-banner .warn-icon{
+  font-size:18px;
+  flex-shrink:0;
+  margin-top:1px;
+}
+.warning-banner .warn-body{font-size:13px;line-height:1.6;color:var(--soft)}
+.warning-banner .warn-body strong{color:#fb923c}
+.warning-banner .warn-body .highlight{
+  display:inline-block;
+  background:rgba(245,158,11,.15);
+  color:var(--warn);
+  padding:0 5px;
+  border-radius:3px;
+  font-weight:600;
+}
+.info-banner{
+  display:flex;
+  gap:12px;
+  padding:12px 14px;
+  border-radius:var(--radius);
+  background:var(--blue-bg);
+  border:1px solid rgba(59,130,246,.2);
+  color:var(--soft);
+  font-size:13px;
+  line-height:1.6;
+  margin-bottom:16px;
+}
+.info-banner .info-icon{font-size:16px;flex-shrink:0}
+
+/* ── Usage tiles ──────────────────────────────────────────── */
+.usage-tiles{
+  display:grid;
+  grid-template-columns:repeat(4,1fr);
+  gap:10px;
+  margin-bottom:20px;
+}
+@media(max-width:700px){.usage-tiles{grid-template-columns:repeat(2,1fr)}}
+.usage-tile{
+  background:var(--panel-2);
+  border:1px solid var(--line);
+  border-radius:var(--radius-sm);
+  padding:14px;
+  transition:border-color var(--transition),transform var(--transition);
+}
+.usage-tile:hover{
+  border-color:var(--line-focus);
+  transform:translateY(-1px);
+}
+.usage-tile .tile-label{
+  font-size:11px;
+  text-transform:uppercase;
+  letter-spacing:.06em;
+  color:var(--muted);
+  margin-bottom:4px;
+}
+.usage-tile .tile-value{
+  font-size:24px;
+  font-weight:600;
+  line-height:1.1;
+  font-variant-numeric:tabular-nums;
+  margin-bottom:2px;
+}
+.usage-tile .tile-sub{
+  font-size:12px;
+  color:var(--muted);
+  font-variant-numeric:tabular-nums;
+}
+.usage-tile.green .tile-value{color:var(--green)}
+.usage-tile.amber .tile-value{color:var(--warn)}
+.usage-tile.red .tile-value{color:var(--bad)}
+.usage-tile.blue .tile-value{color:var(--blue)}
+
+/* ── Usage chart ──────────────────────────────────────────── */
+.usage-chart-wrap{overflow-x:auto;margin-bottom:4px}
+.usage-chart{
+  display:flex;
+  align-items:flex-end;
+  gap:3px;
+  height:130px;
+  min-width:680px;
+  padding-top:12px;
+  border-bottom:1px solid var(--line);
+}
+.usage-bar{
+  flex:1 1 0;
+  min-width:6px;
+  min-height:2px;
+  border-radius:3px 3px 0 0;
+  background:linear-gradient(180deg,rgba(34,197,94,.7),rgba(34,197,94,.3));
+  opacity:.82;
+  position:relative;
+  transition:opacity var(--transition),transform var(--transition);
+  cursor:pointer;
+}
+.usage-bar.warn{background:linear-gradient(180deg,rgba(245,158,11,.7),rgba(245,158,11,.3))}
+.usage-bar.bad{background:linear-gradient(180deg,rgba(239,68,68,.7),rgba(239,68,68,.3))}
+.usage-bar.empty{background:var(--line);opacity:.5;height:2px!important}
+.usage-bar:hover{opacity:1;transform:translateY(-3px);z-index:2}
+.usage-bar:hover::after{
+  content:attr(data-tip);
+  position:absolute;
+  bottom:calc(100% + 8px);
+  left:50%;
+  transform:translateX(-50%);
+  background:#1a1a1a;
+  color:var(--ink);
+  border:1px solid var(--line-focus);
+  padding:6px 10px;
+  border-radius:var(--radius-sm);
+  font-size:11px;
+  white-space:nowrap;
+  pointer-events:none;
+  z-index:5;
+  font-variant-numeric:tabular-nums;
+  box-shadow:var(--shadow-lg);
+}
+.usage-axis{
+  display:flex;
+  justify-content:space-between;
+  min-width:680px;
+  color:var(--muted);
+  font-size:11px;
+  margin-top:4px;
+}
+.usage-summary{
+  font-size:13px;
+  color:var(--muted);
+  margin-bottom:16px;
+  line-height:1.5;
+}
+
+/* ── Usage breakdowns ─────────────────────────────────────── */
+.usage-breakdowns{
+  display:grid;
+  grid-template-columns:repeat(2,1fr);
+  gap:16px;
+  margin-top:20px;
+}
+@media(max-width:700px){.usage-breakdowns{grid-template-columns:1fr}}
+.usage-mini{display:grid;gap:8px}
+.usage-mini-row{
+  display:grid;
+  grid-template-columns:minmax(100px,1fr) 2fr 70px;
+  gap:8px;
+  align-items:center;
+  font-size:12px;
+  font-variant-numeric:tabular-nums;
+}
+.usage-mini-row .label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.usage-mini-track{
+  height:8px;
+  background:#181818;
+  border:1px solid #252525;
+  border-radius:999px;
+  overflow:hidden;
+}
+.usage-mini-fill{
+  height:100%;
+  background:linear-gradient(90deg,var(--green),var(--emerald));
+  border-radius:999px;
+  min-width:2px;
+  transition:width .6s ease;
+}
+
+/* ── Notice / Toast ────────────────────────────────────────── */
+.notice{
+  display:none;
+  border-radius:var(--radius-sm);
+  padding:10px 14px;
+  font-size:13px;
+  overflow-wrap:anywhere;
+  animation:fadeIn .2s ease;
+}
+.notice.show{display:block}
+.notice.ok{
+  background:var(--green-bg);
+  border:1px solid rgba(34,197,94,.25);
+  color:#86efac;
+}
+.notice.bad{
+  background:var(--bad-bg);
+  border:1px solid rgba(239,68,68,.25);
+  color:#fca5a5;
+}
+.notice.info{
+  background:var(--blue-bg);
+  border:1px solid rgba(59,130,246,.25);
+  color:#93c5fd;
+}
+
+/* ── Empty / misc ─────────────────────────────────────────── */
+.empty-state{
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  padding:40px 20px;
+  text-align:center;
+  color:var(--muted);
+}
+.empty-state .empty-icon{font-size:28px;margin-bottom:10px;opacity:.4}
+.empty-state p{margin:0;font-size:13px}
+.hidden{display:none!important}
+
+/* ── Proxy table ──────────────────────────────────────────── */
+.proxy-scheme{
+  display:inline-block;
+  font-size:10px;
+  font-weight:600;
+  padding:2px 6px;
+  border-radius:4px;
+  text-transform:uppercase;
+  letter-spacing:.04em;
+}
+.proxy-scheme.http{background:var(--blue-bg);color:var(--blue)}
+.proxy-scheme.https{background:var(--green-bg);color:var(--green)}
+.proxy-scheme.socks5{background:rgba(139,92,246,.15);color:var(--purple)}
+
+/* ── Responsive sidebar tweaks ────────────────────────────── */
+@media(max-width:860px){
+  .account-id-display .id-value{font-size:12px}
+  .tabs{gap:0}
+  .tab-btn{padding:10px 12px;font-size:12px}
+  .usage-tile .tile-value{font-size:20px}
+}
 </style>
 </head>
 <body>
-<div class="wrap">
-  <header class="top">
-    <a class="brand" href="/"><b>freemodel</b>.dev / account</a>
+
+<div class="wrap" role="application">
+
+  <!-- ═══ HEADER ═══ -->
+  <header class="header">
+    <a class="brand" href="/">
+      <span class="brand-logo">fm</span>
+      <span><b>freemodel</b>.dev / account</span>
+    </a>
     <nav class="nav">
       <a href="/">status</a>
       <a href="/admin">admin</a>
+      <a href="/help">help</a>
     </nav>
   </header>
 
-  <main class="grid">
-    <section class="panel">
-      <h1>Account</h1>
-      <div class="stack">
-        <div>
-          <label for="accountId">Account ID</label>
-          <input id="accountId" class="mono" autocomplete="off" />
-        </div>
-        <div class="row">
-          <button id="loadAccount">Load</button>
-          <button id="createAccount" class="primary">Create</button>
-        </div>
-        <div id="notice" class="notice"></div>
-        <div id="accountMeta" class="meta hidden">
-          <div class="tile"><span>ID</span><b id="metaId" class="mono"></b></div>
-          <div class="tile"><span>Created</span><b id="metaCreated"></b></div>
-        </div>
-        <div id="generatedKeyWrap" class="hidden">
-          <label for="generatedKey">Internal API key</label>
-          <input id="generatedKey" class="mono" readonly />
-        </div>
-        <div id="accountActions" class="row hidden">
-          <button id="rotateKey">Rotate API key</button>
-          <button id="deleteAccount" class="danger">Delete account</button>
-        </div>
+  <!-- ═══ HERO (no account loaded) ═══ -->
+  <div id="hero" class="hero">
+    <div class="hero-icon">⚡</div>
+    <h1>Account Management</h1>
+    <p>Create a new account or load an existing one to manage upstream keys, view proxy usage analytics, and configure external proxies.</p>
+    <div class="hero-actions">
+      <button id="heroCreateBtn" class="primary">Create Account</button>
+      <div class="hero-input">
+        <input id="heroAccountId" type="text" placeholder="Account ID (fmk_...)" autocomplete="off" aria-label="Account ID" />
+        <button id="heroLoadBtn">Load</button>
       </div>
-    </section>
+    </div>
+    <div id="heroNotice" class="notice" style="margin-top:20px;max-width:480px"></div>
+  </div>
 
-    <section id="keysPanel" class="panel hidden">
-      <h2>Upstream keys</h2>
-      <form id="keyForm" class="key-form">
-        <div>
-          <label for="keyLabel">Label</label>
-          <input id="keyLabel" autocomplete="off" />
-        </div>
-        <div>
-          <label for="apiKey">freemodel.dev API key</label>
-          <input id="apiKey" class="mono" type="password" autocomplete="off" />
-        </div>
-        <div>
-          <label for="tier">Tier</label>
-          <select id="tier">
-            <option value="T2">T2</option>
-            <option value="T0">T0</option>
-          </select>
-        </div>
-        <div>
-          <label for="priority">Priority</label>
-          <input id="priority" type="number" min="0" step="1" value="100" />
-        </div>
-        <button class="primary" type="submit">Add</button>
-      </form>
-      <div id="keysTable"></div>
-    </section>
+  <!-- ═══ APP LAYOUT (account loaded) ═══ -->
+  <div id="app" class="app-layout hidden">
 
-    <section id="usagePanel" class="panel wide hidden">
-      <h2>Your usage success</h2>
-      <div class="muted" id="usageSummary">Load an account to view usage.</div>
-      <div class="usage-tiles" id="usageTiles"></div>
-      <div class="usage-chart-wrap">
-        <div class="usage-chart" id="usageChart" role="img" aria-label="Hourly account success rate"></div>
-        <div class="usage-axis" id="usageAxis"></div>
+    <!-- ─── Sidebar: Account ─── -->
+    <aside class="panel" style="position:sticky;top:16px">
+      <div class="panel-header">
+        <h2>Account</h2>
+        <span id="accountStatus" style="font-size:11px;color:var(--green);font-weight:500">● Active</span>
       </div>
-      <div class="usage-breakdowns">
-        <div>
-          <h3>By model</h3>
-          <div class="usage-mini" id="usageByModel"></div>
-        </div>
-        <div>
-          <h3>By status</h3>
-          <div class="usage-mini" id="usageByStatus"></div>
+
+      <div class="account-id-display">
+        <span class="id-label">ID</span>
+        <span class="id-value" id="sidebarId"></span>
+      </div>
+
+      <div id="sidebarCreated" class="created-badge">Created <strong></strong></div>
+
+      <!-- Internal API key -->
+      <div style="margin-bottom:14px">
+        <label for="internalApiKey" style="display:flex;align-items:center;justify-content:space-between">
+          Internal API Key
+          <span id="keyRotatedLabel" class="hidden" style="font-size:11px;color:var(--green);font-weight:400">↻ Rotated</span>
+        </label>
+        <div class="api-key-group">
+          <div class="key-input-wrap">
+            <input id="internalApiKey" class="mono" readonly value="············" spellcheck="false" autocomplete="off" />
+            <button id="copyApiKey" class="copy-btn" title="Copy API key">Copy</button>
+          </div>
         </div>
       </div>
-    </section>
-  </main>
+
+      <div class="sidebar-actions">
+        <button id="rotateKeyBtn">Rotate Key</button>
+        <button id="deleteAccountBtn" class="danger">Delete</button>
+      </div>
+      <div id="sidebarNotice" class="notice" style="margin-top:8px"></div>
+    </aside>
+
+    <!-- ─── Main: Tabbed content ─── -->
+    <main>
+
+      <!-- Tabs -->
+      <nav class="tabs" role="tablist">
+        <button class="tab-btn active" data-tab="keys" role="tab" aria-selected="true">
+          <span>🔑</span> Upstream Keys
+        </button>
+        <button class="tab-btn" data-tab="usage" role="tab" aria-selected="false">
+          <span>📊</span> Usage Analytics
+        </button>
+        <button class="tab-btn" data-tab="proxies" role="tab" aria-selected="false">
+          <span>🌐</span> Proxies
+          <span class="badge" id="proxyBadge">NEW</span>
+        </button>
+      </nav>
+
+      <!-- ── Tab: Upstream Keys ── -->
+      <section class="tab-panel active" id="tabKeys" role="tabpanel">
+        <div class="panel">
+          <div class="panel-header">
+            <h2>Upstream Keys</h2>
+          </div>
+          <p class="muted" style="font-size:13px;margin:0 0 14px">
+            Add freemodel.dev API keys that this account will route through. Higher-priority keys are preferred.
+          </p>
+
+          <form id="keyForm" class="key-form">
+            <div>
+              <label for="keyLabel">Label</label>
+              <input id="keyLabel" placeholder="e.g. Production T2" autocomplete="off" />
+            </div>
+            <div>
+              <label for="apiKey">API Key</label>
+              <input id="apiKey" class="mono" type="password" placeholder="fmk_..." autocomplete="new-password" />
+            </div>
+            <div>
+              <label for="tier">Tier</label>
+              <select id="tier">
+                <option value="T2">T2</option>
+                <option value="T0">T0</option>
+              </select>
+            </div>
+            <div>
+              <label for="priority">Priority</label>
+              <input id="priority" type="number" min="0" step="1" value="100" />
+            </div>
+            <button class="primary" type="submit">Add Key</button>
+          </form>
+
+          <div id="keysTable">
+            <div class="empty-state"><p>No upstream keys configured.</p></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── Tab: Usage Analytics ── -->
+      <section class="tab-panel" id="tabUsage" role="tabpanel">
+        <div class="panel">
+          <div class="panel-header">
+            <h2>Usage Analytics</h2>
+          </div>
+
+          <div id="usageSummary" class="usage-summary">
+            <span class="muted">Loading usage data…</span>
+          </div>
+
+          <div class="usage-tiles" id="usageTiles"></div>
+
+          <div class="usage-chart-wrap">
+            <div class="usage-chart" id="usageChart" role="img" aria-label="Hourly success rate"></div>
+            <div class="usage-axis" id="usageAxis"></div>
+          </div>
+
+          <div class="usage-breakdowns">
+            <div>
+              <h3>By Model</h3>
+              <div class="usage-mini" id="usageByModel"></div>
+            </div>
+            <div>
+              <h3>By Status</h3>
+              <div class="usage-mini" id="usageByStatus"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── Tab: Proxies ── -->
+      <section class="tab-panel" id="tabProxies" role="tabpanel">
+        <div class="panel">
+          <div class="panel-header">
+            <h2>External Proxies</h2>
+          </div>
+
+          <div class="warning-banner">
+            <span class="warn-icon">⚠️</span>
+            <div class="warn-body">
+              <strong>Alt Detection Risk:</strong> FREEMODEL uses anti-abuse systems that detect multiple users behind the same IP. Without external proxies, <strong>ALL</strong> users sharing this server's IP risk getting their API keys banned.
+              <div style="margin-top:6px">
+                Add <span class="highlight">SOCKS5</span> or <span class="highlight">HTTP</span> proxies below to route requests through different IPs.
+              </div>
+            </div>
+          </div>
+
+          <form id="proxyForm" class="proxy-form">
+            <div>
+              <label for="proxyLabel">Label</label>
+              <input id="proxyLabel" placeholder="e.g. US Resi #1" autocomplete="off" />
+            </div>
+            <div>
+              <label for="proxyUrl">Proxy URL</label>
+              <input id="proxyUrl" placeholder="socks5://user:pass@host:1080" class="mono" autocomplete="off" spellcheck="false" />
+            </div>
+            <button class="primary" type="submit">Add Proxy</button>
+          </form>
+
+          <div id="proxiesTable">
+            <div class="empty-state">
+              <div class="empty-icon">🌐</div>
+              <p>No proxies configured. Add one above to distribute requests across IPs.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Shared notice area -->
+      <div id="mainNotice" class="notice" style="margin-top:16px"></div>
+
+    </main>
+  </div>
 </div>
 
 <script>
-const $ = (id) => document.getElementById(id);
-let currentAccount = null;
+/* ═══════════════════════════════════════════════════════════
+   freemodel.dev — Account Management UI
+   ═══════════════════════════════════════════════════════════ */
 
-function showNotice(text, type = "ok") {
-  const el = $("notice");
-  el.textContent = text;
-  el.className = `notice show ${type}`;
-}
+(function() {
+  'use strict';
 
-function fmtDate(value) {
-  return value ? new Date(value).toLocaleString() : "-";
-}
+  // ── State ──
+  let currentAccount = null;
+  let currentTab = 'keys';
+  let copyTimer = null;
+  let usageCache = null;
 
-function fmtMs(value) {
-  return value == null ? "—" : `${Math.round(value).toLocaleString()} ms`;
-}
+  // ── DOM refs ──
+  const $ = id => document.getElementById(id);
+  const hero = $('hero');
+  const app = $('app');
+  const heroNotice = $('heroNotice');
+  const sidebarNotice = $('sidebarNotice');
+  const mainNotice = $('mainNotice');
 
-function fmtPct(value) {
-  return value == null ? "—" : `${Number(value).toFixed(value === 100 || value === 0 ? 0 : 1)}%`;
-}
+  // ── Utilities ──
+  function fmtDate(val) { return val ? new Date(val).toLocaleString() : '—'; }
 
-async function api(path, options = {}) {
-  const res = await fetch(path, {
-    ...options,
-    headers: {
-      "content-type": "application/json",
-      ...(options.headers || {}),
-    },
-  });
-  const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
-  return body;
-}
-
-function renderAccount(account, generatedKey = "") {
-  currentAccount = account;
-  localStorage.setItem("fm_account_id", account.id);
-  $("accountId").value = account.id;
-  $("metaId").textContent = account.id;
-  $("metaCreated").textContent = fmtDate(account.createdAt);
-  $("accountMeta").classList.remove("hidden");
-  $("accountActions").classList.remove("hidden");
-  $("keysPanel").classList.remove("hidden");
-  $("usagePanel").classList.remove("hidden");
-
-  if (generatedKey) {
-    $("generatedKey").value = generatedKey;
-    $("generatedKeyWrap").classList.remove("hidden");
+  function fmtPct(val) {
+    if (val == null) return '—';
+    const fixed = (val === 100 || val === 0) ? 0 : 1;
+    return Number(val).toFixed(fixed) + '%';
   }
 
-  renderKeys(account.keys || []);
-  loadUsage(account.id).catch((err) => {
-    $("usageSummary").textContent = `Failed to load usage: ${err.message}`;
-  });
-}
+  function fmtMs(val) { return val == null ? '—' : Math.round(val).toLocaleString() + ' ms'; }
 
-function renderKeys(keys) {
-  if (!keys.length) {
-    $("keysTable").innerHTML = `<div class="empty">No upstream keys.</div>`;
-    return;
+  function esc(str) {
+    const map = { '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' };
+    return String(str ?? '').replace(/[&<>"']/g, c => map[c]);
   }
 
-  $("keysTable").innerHTML = `
-    <table>
-      <thead>
-        <tr>
-          <th>Label</th>
-          <th>Key</th>
-          <th>Tier</th>
-          <th>Priority</th>
-          <th>Enabled</th>
-          <th></th>
-        </tr>
-      </thead>
-      <tbody>
-        ${keys.map((key) => `
-          <tr data-key-id="${key.id}">
-            <td><input data-field="label" value="${escapeAttr(key.label || "")}" /></td>
-            <td class="mono">${escapeHtml(key.keyHint || "-")}</td>
-            <td>
-              <select data-field="tier">
-                <option value="T2" ${key.tier === "T2" ? "selected" : ""}>T2</option>
-                <option value="T0" ${key.tier === "T0" ? "selected" : ""}>T0</option>
-              </select>
-            </td>
-            <td><input data-field="priority" type="number" min="0" step="1" value="${Number(key.priority ?? 100)}" /></td>
-            <td><input data-field="enabled" type="checkbox" ${key.enabled ? "checked" : ""} /></td>
-            <td class="actions">
-              <button data-action="save">Save</button>
-              <button data-action="delete" class="danger">Delete</button>
-            </td>
-          </tr>
-        `).join("")}
-      </tbody>
-    </table>`;
-}
+  function escAttr(str) { return esc(str).replace(/"/g,'&quot;'); }
 
-function escapeHtml(value) {
-  return String(value ?? "").replace(/[&<>"']/g, (ch) => ({
-    "&": "&amp;",
-    "<": "&lt;",
-    ">": "&gt;",
-    "\"": "&quot;",
-    "'": "&#39;",
-  }[ch]));
-}
-
-function escapeAttr(value) {
-  return escapeHtml(value).replace(/"/g, "&quot;");
-}
-
-function rateTone(rate) {
-  if (rate == null) return "empty";
-  if (rate < 80) return "bad";
-  if (rate < 95) return "warn";
-  return "";
-}
-
-async function loadUsage(accountId) {
-  const data = await api(`/api/accounts/${encodeURIComponent(accountId)}/usage`);
-  renderUsage(data);
-}
-
-function renderUsage(data) {
-  const s = data.summary || {};
-  const officialT2 = data.official?.t2 || {};
-  const total = s.total || 0;
-  const delta = s.successRate != null && officialT2.successRate != null
-    ? s.successRate - officialT2.successRate
-    : null;
-  const deltaText = delta == null ? "" : ` · ${delta >= 0 ? "+" : ""}${delta.toFixed(1)} pts vs official api-cc`;
-  $("usageSummary").textContent = total
-    ? `Last ${data.windowHours || 24}h · ${s.ok.toLocaleString()} / ${total.toLocaleString()} requests completed successfully${deltaText}${s.lastCompletedAt ? ` · latest ${fmtDate(s.lastCompletedAt)}` : ""}`
-    : `No proxy usage recorded for this account in the last ${data.windowHours || 24}h.`;
-
-  $("usageTiles").innerHTML = [
-    ["Your success", fmtPct(s.successRate), `${s.ok || 0} ok · ${s.failed || 0} failed`],
-    ["Official api-cc", fmtPct(officialT2.successRate), `${officialT2.ok || 0} / ${officialT2.total || 0} probes ok`],
-    ["Requests", (total || 0).toLocaleString(), "last 24h"],
-    ["Avg latency", fmtMs(s.avgLatencyMs), s.avgAttempts == null ? "completed requests" : `${s.avgAttempts} attempts avg`],
-  ].map(([label, value, sub]) => `
-    <div class="usage-tile">
-      <span>${escapeHtml(label)}</span>
-      <b>${escapeHtml(value)}</b>
-      <div class="muted">${escapeHtml(sub)}</div>
-    </div>
-  `).join("");
-
-  renderUsageChart(data.buckets || []);
-  renderMiniBars("usageByModel", data.byModel || [], "model");
-  renderMiniBars("usageByStatus", data.byStatus || [], "status");
-}
-
-function renderUsageChart(buckets) {
-  if (!buckets.length || buckets.every((bucket) => !bucket.total)) {
-    $("usageChart").innerHTML = `<div class="empty">No usage samples yet.</div>`;
-    $("usageAxis").innerHTML = "";
-    return;
+  function showNotice(text, type = 'ok', target = heroNotice) {
+    target.textContent = text;
+    target.className = `notice show ${type}`;
+    clearTimeout(target._hide);
+    target._hide = setTimeout(() => { target.className = 'notice'; }, 6000);
   }
 
-  $("usageChart").innerHTML = buckets.map((bucket) => {
-    const rate = bucket.successRate;
-    const height = rate == null ? 2 : Math.max(2, Math.round(rate));
-    const tip = `${fmtPct(rate)} · ${bucket.ok}/${bucket.total} ok · ${fmtMs(bucket.avgLatencyMs)} · ${new Date(bucket.ts).toLocaleTimeString([], { hour: "numeric" })}`;
-    return `<span class="usage-bar ${rateTone(rate)}" style="height:${height}%" data-tip="${escapeAttr(tip)}"></span>`;
-  }).join("");
+  function showMainNotice(text, type = 'ok') { showNotice(text, type, mainNotice); }
+  function showSidebarNotice(text, type = 'ok') { showNotice(text, type, sidebarNotice); }
 
-  const first = buckets[0]?.ts;
-  const mid = buckets[Math.floor(buckets.length / 2)]?.ts;
-  const last = buckets[buckets.length - 1]?.ts;
-  $("usageAxis").innerHTML = [first, mid, last]
-    .filter(Boolean)
-    .map((ts) => `<span>${new Date(ts).toLocaleTimeString([], { hour: "numeric" })}</span>`)
-    .join("");
-}
-
-function renderMiniBars(id, rows, labelKey) {
-  if (!rows.length) {
-    $(id).innerHTML = `<div class="empty">No data.</div>`;
-    return;
+  function getProxyScheme(url) {
+    const u = (url || '').toLowerCase();
+    if (u.startsWith('socks5://')) return 'socks5';
+    if (u.startsWith('https://')) return 'https';
+    if (u.startsWith('http://')) return 'http';
+    return '';
   }
-  const max = Math.max(1, ...rows.map((row) => row.total || 0));
-  $(id).innerHTML = rows.map((row) => {
-    const label = labelKey === "status" ? `HTTP ${row.status || "network"}` : row.model;
-    const width = Math.max(2, Math.round(((row.total || 0) / max) * 100));
-    return `
-      <div class="usage-mini-row">
-        <span class="mono">${escapeHtml(label)}</span>
-        <span class="usage-mini-track"><span class="usage-mini-fill" style="width:${width}%"></span></span>
-        <span>${fmtPct(row.successRate)}</span>
-      </div>
-    `;
-  }).join("");
-}
 
-async function loadAccount(id = $("accountId").value.trim()) {
-  if (!id) return;
-  const body = await api(`/api/accounts/${encodeURIComponent(id)}`);
-  renderAccount(body.account);
-  showNotice("Account loaded.");
-}
-
-$("createAccount").addEventListener("click", async () => {
-  try {
-    const body = await api("/api/accounts", { method: "POST", body: "{}" });
-    renderAccount(body.account, body.apiKey);
-    showNotice("Account created.");
-  } catch (err) {
-    showNotice(err.message, "bad");
-  }
-});
-
-$("loadAccount").addEventListener("click", () => {
-  loadAccount().catch((err) => showNotice(err.message, "bad"));
-});
-
-$("rotateKey").addEventListener("click", async () => {
-  if (!currentAccount) return;
-  try {
-    const body = await api(`/api/accounts/${encodeURIComponent(currentAccount.id)}/api-key`, {
-      method: "POST",
-      body: "{}",
+  // ── API helper ──
+  async function api(path, options = {}) {
+    const res = await fetch(path, {
+      ...options,
+      headers: {
+        'content-type': 'application/json',
+        ...(options.headers || {}),
+      },
     });
-    $("generatedKey").value = body.apiKey;
-    $("generatedKeyWrap").classList.remove("hidden");
-    showNotice("API key rotated.");
-  } catch (err) {
-    showNotice(err.message, "bad");
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
+    return body;
   }
-});
 
-$("deleteAccount").addEventListener("click", async () => {
-  if (!currentAccount) return;
-  if (!confirm(`Delete ${currentAccount.id}?`)) return;
-  try {
-    await api(`/api/accounts/${encodeURIComponent(currentAccount.id)}`, { method: "DELETE" });
-    localStorage.removeItem("fm_account_id");
+  // ── Tab switching ──
+  function switchTab(tab) {
+    currentTab = tab;
+    document.querySelectorAll('.tab-btn').forEach(b => {
+      b.classList.toggle('active', b.dataset.tab === tab);
+      b.setAttribute('aria-selected', b.dataset.tab === tab);
+    });
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    const panel = $('tab' + tab.charAt(0).toUpperCase() + tab.slice(1));
+    if (panel) panel.classList.add('active');
+    // Lazy-load usage when switching to usage tab
+    if (tab === 'usage' && currentAccount && !usageCache) {
+      loadUsage(currentAccount.id).catch(() => {});
+    }
+    // Load proxies when switching to proxies tab
+    if (tab === 'proxies' && currentAccount) {
+      loadProxies(currentAccount.id).catch(() => {});
+    }
+  }
+
+  // ── Copy to clipboard ──
+  async function copyText(text, btn) {
+    try {
+      await navigator.clipboard.writeText(text);
+      const orig = btn.textContent;
+      btn.textContent = 'Copied!';
+      btn.classList.add('copied');
+      clearTimeout(copyTimer);
+      copyTimer = setTimeout(() => {
+        btn.textContent = orig;
+        btn.classList.remove('copied');
+      }, 1800);
+    } catch {
+      showSidebarNotice('Failed to copy to clipboard.', 'bad');
+    }
+  }
+
+  // ── Show/Hide app ──
+  function showApp() {
+    hero.classList.add('hidden');
+    app.classList.remove('hidden');
+  }
+
+  function showHero() {
+    hero.classList.remove('hidden');
+    app.classList.add('hidden');
     currentAccount = null;
-    $("accountMeta").classList.add("hidden");
-    $("accountActions").classList.add("hidden");
-    $("keysPanel").classList.add("hidden");
-    $("usagePanel").classList.add("hidden");
-    $("generatedKeyWrap").classList.add("hidden");
-    showNotice("Account deleted.");
-  } catch (err) {
-    showNotice(err.message, "bad");
+    usageCache = null;
   }
-});
 
-$("keyForm").addEventListener("submit", async (event) => {
-  event.preventDefault();
-  if (!currentAccount) return;
-  try {
-    const body = await api(`/api/accounts/${encodeURIComponent(currentAccount.id)}/keys`, {
-      method: "POST",
-      body: JSON.stringify({
-        label: $("keyLabel").value,
-        apiKey: $("apiKey").value,
-        tier: $("tier").value,
-        priority: $("priority").value,
-      }),
-    });
-    $("keyLabel").value = "";
-    $("apiKey").value = "";
+  // ═══════════════════════════════════════════════════════════
+  //  Account operations
+  // ═══════════════════════════════════════════════════════════
+
+  async function loadAccount(id) {
+    if (!id) throw new Error('Account ID is required.');
+    const body = await api(`/api/accounts/${encodeURIComponent(id)}`);
     renderAccount(body.account);
-    showNotice("Upstream key added.");
-  } catch (err) {
-    showNotice(err.message, "bad");
+    showSidebarNotice('Account loaded.');
+    return body.account;
   }
-});
 
-$("keysTable").addEventListener("click", async (event) => {
-  const button = event.target.closest("button");
-  if (!button || !currentAccount) return;
-  const row = button.closest("tr");
-  const keyId = row?.dataset.keyId;
-  if (!keyId) return;
+  async function createAccount() {
+    const body = await api('/api/accounts', { method: 'POST', body: '{}' });
+    renderAccount(body.account, body.apiKey);
+    showSidebarNotice('Account created.');
+  }
 
-  try {
-    if (button.dataset.action === "delete") {
-      const body = await api(`/api/accounts/${encodeURIComponent(currentAccount.id)}/keys/${encodeURIComponent(keyId)}`, {
-        method: "DELETE",
+  async function rotateKey() {
+    if (!currentAccount) return;
+    const body = await api(`/api/accounts/${encodeURIComponent(currentAccount.id)}/api-key`, {
+      method: 'POST', body: '{}',
+    });
+    $('internalApiKey').value = body.apiKey;
+    $('keyRotatedLabel').classList.remove('hidden');
+    showSidebarNotice('API key rotated.');
+  }
+
+  async function deleteAccount() {
+    if (!currentAccount) return;
+    if (!confirm(`Are you sure you want to delete account ${currentAccount.id}?\n\nThis action cannot be undone.`)) return;
+    await api(`/api/accounts/${encodeURIComponent(currentAccount.id)}`, { method: 'DELETE' });
+    localStorage.removeItem('fm_account_id');
+    showHero();
+    showNotice('Account deleted.', 'ok', heroNotice);
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  //  Render account
+  // ═══════════════════════════════════════════════════════════
+
+  function renderAccount(account, generatedKey = '') {
+    currentAccount = account;
+    usageCache = null;
+    localStorage.setItem('fm_account_id', account.id);
+
+    showApp();
+
+    // Sidebar
+    const created = account.createdAt ? new Date(account.createdAt) : null;
+    $('sidebarId').textContent = account.id;
+    $('sidebarCreated').querySelector('strong').textContent = created
+      ? created.toLocaleDateString([], { year:'numeric', month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' })
+      : '—';
+
+    if (generatedKey) {
+      $('internalApiKey').value = generatedKey;
+      $('keyRotatedLabel').classList.remove('hidden');
+    } else {
+      $('internalApiKey').value = account.apiKey || '············';
+    }
+
+    // Copy button text
+    const copyBtn = $('copyApiKey');
+    copyBtn.textContent = 'Copy';
+    copyBtn.classList.remove('copied');
+
+    // Render keys
+    renderKeys(account.keys || []);
+
+    // Load proxies if on that tab
+    if (currentTab === 'proxies') {
+      loadProxies(account.id).catch(() => {});
+    }
+
+    // Load usage if on that tab
+    if (currentTab === 'usage') {
+      loadUsage(account.id).catch(err => {
+        $('usageSummary').innerHTML = `<span class="muted">Failed to load usage: ${esc(err.message)}</span>`;
       });
-      renderAccount(body.account);
-      showNotice("Upstream key deleted.");
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  //  Keys
+  // ═══════════════════════════════════════════════════════════
+
+  function renderKeys(keys) {
+    const container = $('keysTable');
+    if (!keys.length) {
+      container.innerHTML = `<div class="empty-state"><div class="empty-icon">🔑</div><p>No upstream keys configured. Add one above.</p></div>`;
       return;
     }
 
-    const body = await api(`/api/accounts/${encodeURIComponent(currentAccount.id)}/keys/${encodeURIComponent(keyId)}`, {
-      method: "PATCH",
-      body: JSON.stringify({
-        label: row.querySelector("[data-field='label']").value,
-        tier: row.querySelector("[data-field='tier']").value,
-        priority: row.querySelector("[data-field='priority']").value,
-        enabled: row.querySelector("[data-field='enabled']").checked,
-      }),
-    });
-    renderAccount(body.account);
-    showNotice("Upstream key saved.");
-  } catch (err) {
-    showNotice(err.message, "bad");
+    container.innerHTML = `
+      <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Label</th>
+            <th>Key</th>
+            <th>Tier</th>
+            <th>Priority</th>
+            <th>Enabled</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          ${keys.map(k => `
+            <tr data-key-id="${escAttr(k.id)}">
+              <td><input data-field="label" value="${escAttr(k.label || '')}" /></td>
+              <td class="mono">${esc(k.keyHint || '—')}</td>
+              <td>
+                <select data-field="tier">
+                  <option value="T2" ${k.tier === 'T2' ? 'selected' : ''}>T2</option>
+                  <option value="T0" ${k.tier === 'T0' ? 'selected' : ''}>T0</option>
+                </select>
+              </td>
+              <td><input data-field="priority" type="number" min="0" step="1" value="${Number(k.priority ?? 100)}" /></td>
+              <td><input data-field="enabled" type="checkbox" ${k.enabled ? 'checked' : ''} /></td>
+              <td class="actions">
+                <button data-action="save" class="sm">Save</button>
+                <button data-action="delete" class="danger sm">Delete</button>
+              </td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+      </div>`;
   }
-});
 
-const remembered = localStorage.getItem("fm_account_id");
-if (remembered) {
-  $("accountId").value = remembered;
-  loadAccount(remembered).catch(() => {});
-}
+  // ═══════════════════════════════════════════════════════════
+  //  Usage
+  // ═══════════════════════════════════════════════════════════
+
+  async function loadUsage(accountId) {
+    const id = encodeURIComponent(accountId || currentAccount?.id);
+    if (!id) return;
+    const data = await api(`/api/accounts/${id}/usage`);
+    usageCache = data;
+    renderUsage(data);
+  }
+
+  function rateTone(rate) {
+    if (rate == null) return 'empty';
+    if (rate < 80) return 'bad';
+    if (rate < 95) return 'warn';
+    return '';
+  }
+
+  function tileClass(rate) {
+    if (rate == null) return '';
+    if (rate < 80) return 'red';
+    if (rate < 95) return 'amber';
+    return 'green';
+  }
+
+  function renderUsage(data) {
+    const s = data.summary || {};
+    const off = data.official || {};
+    const offT2 = off.t2 || {};
+    const total = s.total || 0;
+    const delta = (s.successRate != null && offT2.successRate != null)
+      ? s.successRate - offT2.successRate : null;
+    const deltaText = delta == null ? ''
+      : ` · <span style="color:${delta >= 0 ? 'var(--green)' : 'var(--bad)'}">${delta >= 0 ? '+' : ''}${delta.toFixed(1)} pts</span> vs official api-cc`;
+
+    $('usageSummary').innerHTML = total
+      ? `Last <strong>${data.windowHours || 24}h</strong> · ${(s.ok || 0).toLocaleString()} / ${total.toLocaleString()} requests completed successfully${deltaText}${s.lastCompletedAt ? ` · latest <span class="muted">${fmtDate(s.lastCompletedAt)}</span>` : ''}`
+      : `<span class="muted">No proxy usage recorded for this account in the last ${data.windowHours || 24}h.</span>`;
+
+    // Tiles
+    $('usageTiles').innerHTML = [
+      { label:'Your Success Rate', value:fmtPct(s.successRate), sub:`${(s.ok||0).toLocaleString()} ok · ${(s.failed||0).toLocaleString()} failed`, cls:tileClass(s.successRate) },
+      { label:'Official api-cc', value:fmtPct(offT2.successRate), sub:`${(offT2.ok||0).toLocaleString()} / ${(offT2.total||0).toLocaleString()} probes`, cls:tileClass(offT2.successRate) },
+      { label:'Total Requests', value:(total || 0).toLocaleString(), sub:'last 24h', cls:'blue' },
+      { label:'Avg Latency', value:fmtMs(s.avgLatencyMs), sub:s.avgAttempts == null ? 'completed requests' : `${s.avgAttempts} attempts avg`, cls:'' },
+    ].map(t => `
+      <div class="usage-tile ${t.cls}">
+        <div class="tile-label">${esc(t.label)}</div>
+        <div class="tile-value">${esc(t.value)}</div>
+        <div class="tile-sub">${esc(t.sub)}</div>
+      </div>
+    `).join('');
+
+    // Chart
+    renderUsageChart(data.buckets || []);
+    // Breakdowns
+    renderMiniBars('usageByModel', data.byModel || [], 'model');
+    renderMiniBars('usageByStatus', data.byStatus || [], 'status');
+  }
+
+  function renderUsageChart(buckets) {
+    const chart = $('usageChart');
+    const axis = $('usageAxis');
+
+    if (!buckets.length || buckets.every(b => !b.total)) {
+      chart.innerHTML = `<div class="empty-state" style="width:100%;padding:20px 0"><p>No usage samples yet.</p></div>`;
+      axis.innerHTML = '';
+      return;
+    }
+
+    chart.innerHTML = buckets.map(b => {
+      const rate = b.successRate;
+      const height = rate == null ? 2 : Math.max(2, Math.round(rate));
+      const tip = `${fmtPct(rate)} · ${b.ok}/${b.total} ok · ${fmtMs(b.avgLatencyMs)} · ${new Date(b.ts).toLocaleTimeString([], {hour:'numeric'})}`;
+      return `<span class="usage-bar ${rateTone(rate)}" style="height:${height}%" data-tip="${escAttr(tip)}"></span>`;
+    }).join('');
+
+    const first = buckets[0]?.ts;
+    const mid = buckets[Math.floor(buckets.length / 2)]?.ts;
+    const last = buckets[buckets.length - 1]?.ts;
+    axis.innerHTML = [first, mid, last]
+      .filter(Boolean)
+      .map(ts => `<span>${new Date(ts).toLocaleTimeString([], {hour:'numeric'})}</span>`)
+      .join('');
+  }
+
+  function renderMiniBars(id, rows, labelKey) {
+    const el = $(id);
+    if (!rows.length) {
+      el.innerHTML = `<div class="empty-state" style="padding:16px 0"><p>No data.</p></div>`;
+      return;
+    }
+    const max = Math.max(1, ...rows.map(r => r.total || 0));
+    el.innerHTML = rows.map(r => {
+      const label = labelKey === 'status' ? `HTTP ${r.status || 'network'}` : r.model;
+      const width = Math.max(2, Math.round(((r.total || 0) / max) * 100));
+      return `
+        <div class="usage-mini-row">
+          <span class="label mono">${esc(label)}</span>
+          <span class="usage-mini-track"><span class="usage-mini-fill" style="width:${width}%"></span></span>
+          <span>${fmtPct(r.successRate)}</span>
+        </div>
+      `;
+    }).join('');
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  //  Proxies
+  // ═══════════════════════════════════════════════════════════
+
+  async function loadProxies(accountId) {
+    const id = encodeURIComponent(accountId || currentAccount?.id);
+    if (!id) return;
+    const body = await api(`/api/accounts/${id}/proxies`);
+    renderProxies(body.proxies || []);
+  }
+
+  function renderProxies(proxies) {
+    const container = $('proxiesTable');
+    if (!proxies.length) {
+      container.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-icon">🌐</div>
+          <p>No proxies configured. Add one above to distribute requests across IPs.</p>
+        </div>`;
+      return;
+    }
+
+    container.innerHTML = `
+      <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Label</th>
+            <th>URL</th>
+            <th>Status</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          ${proxies.map(p => {
+            const scheme = getProxyScheme(p.proxyUrl);
+            return `
+            <tr data-proxy-id="${escAttr(p.id)}">
+              <td><input data-field="label" value="${escAttr(p.label || '')}" style="min-width:90px" /></td>
+              <td class="mono"><input data-field="proxyUrl" value="${escAttr(p.proxyUrl || '')}" style="min-width:180px;font-size:12px" /></td>
+              <td>
+                <span class="proxy-scheme ${scheme || 'http'}">${esc(scheme || 'http').toUpperCase()}</span>
+              </td>
+              <td class="actions">
+                <button data-action="save" class="sm">Save</button>
+                <button data-action="delete" class="danger sm">Delete</button>
+              </td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+      </div>`;
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  //  Event wire-up
+  // ═══════════════════════════════════════════════════════════
+
+  // ── Hero: Create ──
+  $('heroCreateBtn').addEventListener('click', async () => {
+    try {
+      $('heroCreateBtn').disabled = true;
+      $('heroCreateBtn').textContent = 'Creating…';
+      await createAccount();
+    } catch (err) {
+      showNotice(err.message, 'bad', heroNotice);
+    } finally {
+      $('heroCreateBtn').disabled = false;
+      $('heroCreateBtn').textContent = 'Create Account';
+    }
+  });
+
+  // ── Hero: Load ──
+  $('heroLoadBtn').addEventListener('click', async () => {
+    const id = $('heroAccountId').value.trim();
+    if (!id) return;
+    try {
+      $('heroLoadBtn').disabled = true;
+      $('heroLoadBtn').textContent = 'Loading…';
+      await loadAccount(id);
+    } catch (err) {
+      showNotice(err.message, 'bad', heroNotice);
+    } finally {
+      $('heroLoadBtn').disabled = false;
+      $('heroLoadBtn').textContent = 'Load';
+    }
+  });
+
+  $('heroAccountId').addEventListener('keydown', e => {
+    if (e.key === 'Enter') $('heroLoadBtn').click();
+  });
+
+  // ── Sidebar: Rotate key ──
+  $('rotateKeyBtn').addEventListener('click', async () => {
+    if (!currentAccount) return;
+    try {
+      $('rotateKeyBtn').disabled = true;
+      $('rotateKeyBtn').textContent = 'Rotating…';
+      await rotateKey();
+    } catch (err) {
+      showSidebarNotice(err.message, 'bad');
+    } finally {
+      $('rotateKeyBtn').disabled = false;
+      $('rotateKeyBtn').textContent = 'Rotate Key';
+    }
+  });
+
+  // ── Sidebar: Delete account ──
+  $('deleteAccountBtn').addEventListener('click', async () => {
+    try {
+      $('deleteAccountBtn').disabled = true;
+      await deleteAccount();
+    } catch (err) {
+      showSidebarNotice(err.message, 'bad');
+      $('deleteAccountBtn').disabled = false;
+    }
+  });
+
+  // ── Sidebar: Copy API key ──
+  $('copyApiKey').addEventListener('click', () => {
+    if (!currentAccount) return;
+    copyText($('internalApiKey').value, $('copyApiKey'));
+  });
+
+  // ── Tabs ──
+  document.querySelector('.tabs').addEventListener('click', e => {
+    const btn = e.target.closest('.tab-btn');
+    if (btn) switchTab(btn.dataset.tab);
+  });
+
+  // ── Key form: Add key ──
+  $('keyForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    if (!currentAccount) return;
+    const btn = e.target.querySelector('button[type="submit"]');
+    try {
+      btn.disabled = true;
+      btn.textContent = 'Adding…';
+      const body = await api(`/api/accounts/${encodeURIComponent(currentAccount.id)}/keys`, {
+        method: 'POST',
+        body: JSON.stringify({
+          label: $('keyLabel').value.trim(),
+          apiKey: $('apiKey').value.trim(),
+          tier: $('tier').value,
+          priority: parseInt($('priority').value, 10) || 1,
+        }),
+      });
+      $('keyLabel').value = '';
+      $('apiKey').value = '';
+      renderAccount(body.account);
+      showMainNotice('Upstream key added.');
+    } catch (err) {
+      showMainNotice(err.message, 'bad');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Add Key';
+    }
+  });
+
+  // ── Key table: Save / Delete ──
+  $('keysTable').addEventListener('click', async e => {
+    const btn = e.target.closest('button');
+    if (!btn || !currentAccount) return;
+    const row = btn.closest('tr');
+    const keyId = row?.dataset.keyId;
+    if (!keyId) return;
+
+    try {
+      if (btn.dataset.action === 'delete') {
+        if (!confirm('Delete this upstream key?')) return;
+        btn.disabled = true;
+        const body = await api(`/api/accounts/${encodeURIComponent(currentAccount.id)}/keys/${encodeURIComponent(keyId)}`, { method: 'DELETE' });
+        renderAccount(body.account);
+        showMainNotice('Upstream key deleted.');
+        return;
+      }
+
+      // Save / PATCH
+      btn.disabled = true;
+      btn.textContent = 'Saving…';
+      const body = await api(`/api/accounts/${encodeURIComponent(currentAccount.id)}/keys/${encodeURIComponent(keyId)}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          label: row.querySelector('[data-field="label"]').value.trim(),
+          tier: row.querySelector('[data-field="tier"]').value,
+          priority: parseInt(row.querySelector('[data-field="priority"]').value, 10) || 1,
+          enabled: row.querySelector('[data-field="enabled"]').checked,
+        }),
+      });
+      renderAccount(body.account);
+      showMainNotice('Upstream key saved.');
+    } catch (err) {
+      showMainNotice(err.message, 'bad');
+      btn.disabled = false;
+      btn.textContent = 'Save';
+    }
+  });
+
+  // ── Proxy form: Add proxy ──
+  $('proxyForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    if (!currentAccount) return;
+    const label = $('proxyLabel').value.trim();
+    const proxyUrl = $('proxyUrl').value.trim();
+    if (!label || !proxyUrl) {
+      showMainNotice('Label and proxy URL are required.', 'bad');
+      return;
+    }
+    const btn = e.target.querySelector('button[type="submit"]');
+    try {
+      btn.disabled = true;
+      btn.textContent = 'Adding…';
+      const body = await api(`/api/accounts/${encodeURIComponent(currentAccount.id)}/proxies`, {
+        method: 'POST',
+        body: JSON.stringify({ label, proxyUrl }),
+      });
+      $('proxyLabel').value = '';
+      $('proxyUrl').value = '';
+      renderProxies(body.proxies || []);
+      showMainNotice('Proxy added.');
+    } catch (err) {
+      showMainNotice(err.message, 'bad');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Add Proxy';
+    }
+  });
+
+  // ── Proxy table: Save / Delete ──
+  $('proxiesTable').addEventListener('click', async e => {
+    const btn = e.target.closest('button');
+    if (!btn || !currentAccount) return;
+    const row = btn.closest('tr');
+    const proxyId = row?.dataset.proxyId;
+    if (!proxyId) return;
+
+    try {
+      if (btn.dataset.action === 'delete') {
+        if (!confirm('Remove this proxy?')) return;
+        btn.disabled = true;
+        await api(`/api/accounts/${encodeURIComponent(currentAccount.id)}/proxies/${encodeURIComponent(proxyId)}`, { method: 'DELETE' });
+        await loadProxies(currentAccount.id);
+        showMainNotice('Proxy removed.');
+        return;
+      }
+
+      // Save / PATCH
+      btn.disabled = true;
+      btn.textContent = 'Saving…';
+      await api(`/api/accounts/${encodeURIComponent(currentAccount.id)}/proxies/${encodeURIComponent(proxyId)}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          label: row.querySelector('[data-field="label"]').value.trim(),
+          proxyUrl: row.querySelector('[data-field="proxyUrl"]').value.trim(),
+        }),
+      });
+      await loadProxies(currentAccount.id);
+      showMainNotice('Proxy saved.');
+    } catch (err) {
+      showMainNotice(err.message, 'bad');
+      btn.disabled = false;
+      btn.textContent = 'Save';
+    }
+  });
+
+  // ── Auto-load remembered account ──
+  const remembered = localStorage.getItem('fm_account_id');
+  if (remembered) {
+    $('heroAccountId').value = remembered;
+    loadAccount(remembered).catch(() => {});
+  }
+
+})();
 </script>
 </body>
 </html>
