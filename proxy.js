@@ -64,6 +64,19 @@ const nonNegativeIntEnv = (env, key, fallback) => {
   return Number.isFinite(value) && value >= 0 ? value : fallback;
 };
 
+// Upstream statuses that should be forwarded downstream as-is rather than
+// retried. A 404 means the resource/model genuinely does not exist, so retrying
+// or falling back to another credential/tier just adds latency for the client.
+const statusSetEnv = (env, key, fallback) => {
+  const raw = env[key];
+  if (raw == null || raw === "") return new Set(fallback);
+  const parsed = String(raw)
+    .split(",")
+    .map((s) => parseInt(s.trim(), 10))
+    .filter((n) => Number.isInteger(n) && n >= 100 && n <= 599);
+  return new Set(parsed.length ? parsed : fallback);
+};
+
 const normalizeBaseUrl = (value) => String(value || "").trim().replace(/\/+$/, "");
 
 export function getProxyConfig(env = process.env) {
@@ -75,6 +88,7 @@ export function getProxyConfig(env = process.env) {
     retriesPerCredential: intEnv(env, "PROXY_RETRIES_PER_CREDENTIAL", 3),
     bodyLimit: env.PROXY_BODY_LIMIT || "20mb",
     failureBodyDrainBytes: intEnv(env, "PROXY_FAILURE_DRAIN_BYTES", 64 * 1024),
+    passthroughStatuses: statusSetEnv(env, "PROXY_PASSTHROUGH_STATUSES", [404]),
     successBodyBufferBytes: nonNegativeIntEnv(env, "PROXY_SUCCESS_BUFFER_BYTES", 0),
     accountCacheMs: nonNegativeIntEnv(env, "PROXY_ACCOUNT_CACHE_MS", 2000),
     accountCacheMax: intEnv(env, "PROXY_ACCOUNT_CACHE_MAX", 50000),
@@ -316,7 +330,10 @@ async function fetchAttempt({ req, rawBody, path, step, fetchImpl, config, signa
     const response = await fetchImpl(upstreamUrl, options);
     const headerLatency = performance.now() - started;
     const ok = response.status >= 200 && response.status < 300;
-    if (!ok) {
+    // Some non-2xx statuses (e.g. 404) are forwarded straight through to the
+    // client instead of being retried against other credentials/tiers.
+    const passthrough = !ok && config.passthroughStatuses.has(response.status);
+    if (!ok && !passthrough) {
       await drainFailureBody(response, config.failureBodyDrainBytes);
       return {
         ok: false,
@@ -326,6 +343,21 @@ async function fetchAttempt({ req, rawBody, path, step, fetchImpl, config, signa
         tier: step.tier,
         upstreamUrl,
         accountKeyId: step.accountKeyId,
+      };
+    }
+
+    if (passthrough) {
+      return {
+        ok: false,
+        passthrough: true,
+        status: response.status,
+        latencyMs: performance.now() - started,
+        error: `HTTP ${response.status}`,
+        tier: step.tier,
+        upstreamUrl,
+        accountKeyId: step.accountKeyId,
+        response,
+        body: null,
       };
     }
 
@@ -1036,7 +1068,7 @@ export function createProxyMiddleware({
             error: attempt.error,
           };
           active.attempts.push(attemptPublic);
-          touch(attempt.ok ? "streaming" : "retrying", attemptPublic);
+          touch(attempt.ok || attempt.passthrough ? "streaming" : "retrying", attemptPublic);
 
           await store.recordProxyAttempt({
             requestId,
@@ -1050,11 +1082,11 @@ export function createProxyMiddleware({
             error: attempt.error,
           });
 
-          if (attempt.ok) {
+          if (attempt.ok || attempt.passthrough) {
             try {
               await streamUpstreamResponse(attempt, res, requestId);
               await complete({
-                ok: true,
+                ok: attempt.ok,
                 status: attempt.status,
                 upstreamTier: attempt.tier,
                 upstreamUrl: attempt.upstreamUrl,
